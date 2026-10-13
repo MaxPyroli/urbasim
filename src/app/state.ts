@@ -82,7 +82,7 @@ class Store {
 export const store = new Store();
 
 /** Fusionne un état partiel (stockage, lien) dans l'état par défaut, en ignorant ce qui est invalide. */
-function sanitize(raw: unknown): AppState {
+export function sanitize(raw: unknown): AppState {
   const base = defaultState();
   if (!raw || typeof raw !== 'object') return base;
   const r = raw as Partial<AppState>;

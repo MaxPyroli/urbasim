@@ -1,4 +1,4 @@
-import { LocalProjection, bbox, centroid, intersection, multiArea, pointInRing, polygonArea, ringArea, toMulti } from './geometry';
+import { LocalProjection, bbox, difference, intersection, isSimplePolygon, multiArea, polygonArea, ringArea, toMulti } from './geometry';
 import type { LonLat, PolygonRings, Ring } from './types';
 
 /** Bâtiment voisin affiché pour situer le projet dans son contexte (données IGN BD TOPO). */
@@ -75,34 +75,60 @@ export function parseBdTopoBuildings(geojson: unknown): ContextBuilding[] {
   return out;
 }
 
+/** Résultat du découpage des bâtiments voisins par le terrain étudié. */
+export interface CarveResult {
+  /** Bâtiments d'origine à ne plus dessiner : ils chevauchent le terrain. */
+  hidden: Set<string>;
+  /** Ce qu'il en reste une fois le terrain retiré (parties situées hors du terrain). */
+  remainders: ContextBuilding[];
+}
+
+/** En dessous de ce chevauchement (m²), c'est un simple écart de numérisation entre cadastre et bâti : on ne touche à rien. */
+const MIN_OVERLAP = 0.5;
+/** On ne redessine pas les miettes plus petites que cela (m²). */
+const MIN_REMAINDER = 0.5;
+
 /**
- * Bâtiments existants situés sur le terrain étudié : ils seraient démolis par le projet, on les masque.
- * Un bâtiment est masqué si son centre est dans le terrain ou si au moins `ratio` de son emprise y est. Le seuil évite de
- * masquer un voisin mitoyen dont l'emprise déborderait de quelques décimètres (cadastre et bâti IGN ne coïncident pas
- * exactement, et un terrain dessiné à la main est approximatif).
+ * Retire du bâti voisin tout ce qui se trouve sur le terrain étudié : le projet remplace l'existant.
+ * Un bâtiment entièrement sur le terrain disparaît ; un bâtiment qui le déborde (une terrasse de plusieurs lots,
+ * un voisin mitoyen) est découpé et ses parties hors terrain sont conservées. Un bâtiment n'est jamais masqué en
+ * entier à cause d'un lot voisin, ni gardé par-dessus le terrain parce que sa part sur le terrain serait petite.
+ * Toute géométrie dégénérée est laissée telle quelle plutôt que de faire échouer l'affichage.
  */
-export function hiddenBuildingIds(parcel: LonLat[], buildings: ContextBuilding[], ratio = 0.35): Set<string> {
-  const hidden = new Set<string>();
-  if (parcel.length < 3 || buildings.length === 0) return hidden;
-  const c0 = parcel.reduce((s, p) => ({ lon: s.lon + p.lon / parcel.length, lat: s.lat + p.lat / parcel.length }), { lon: 0, lat: 0 });
-  const proj = new LocalProjection(c0.lon, c0.lat);
+export function carveParcel(parcel: LonLat[], buildings: ContextBuilding[]): CarveResult {
+  const out: CarveResult = { hidden: new Set(), remainders: [] };
+  if (parcel.length < 3 || buildings.length === 0) return out;
+  const n = parcel.length;
+  const proj = new LocalProjection(
+    parcel.reduce((s, p) => s + p.lon, 0) / n,
+    parcel.reduce((s, p) => s + p.lat, 0) / n,
+  );
   const pRing: Ring = parcel.map((p) => proj.toLocal(p));
+  if (!isSimplePolygon(pRing) || ringArea(pRing) < 1) return out; // contour invalide : rien à découper
   const pb = bbox(pRing);
   const pMulti = toMulti(pRing);
   for (const b of buildings) {
-    const outer = b.outer.map((p) => proj.toLocal(p));
-    const bb = bbox(outer);
-    if (bb.maxX < pb.minX || bb.minX > pb.maxX || bb.maxY < pb.minY || bb.minY > pb.maxY) continue;
-    if (pointInRing(centroid(outer), pRing)) {
-      hidden.add(b.id);
-      continue;
+    try {
+      const outer = b.outer.map((p) => proj.toLocal(p));
+      const bb = bbox(outer);
+      if (bb.maxX < pb.minX || bb.minX > pb.maxX || bb.maxY < pb.minY || bb.minY > pb.maxY) continue;
+      const poly: PolygonRings = [outer, ...b.holes.map((h) => h.map((p) => proj.toLocal(p)))];
+      if (multiArea(intersection(pMulti, [poly])) < MIN_OVERLAP) continue;
+      out.hidden.add(b.id);
+      difference([poly], pMulti).forEach((piece, k) => {
+        if (polygonArea(piece) < MIN_REMAINDER) return;
+        out.remainders.push({
+          ...b,
+          id: `${b.id}~${k}`,
+          outer: piece[0].map((v) => proj.toLonLat(v)),
+          holes: piece.slice(1).map((h) => h.map((v) => proj.toLonLat(v))),
+        });
+      });
+    } catch {
+      /* géométrie dégénérée (anneau invalide…) : ce bâtiment reste dessiné tel quel */
     }
-    const poly: PolygonRings = [outer, ...b.holes.map((h) => h.map((p) => proj.toLocal(p)))];
-    const area = polygonArea(poly) || ringArea(outer);
-    if (area <= 0) continue;
-    if (multiArea(intersection(pMulti, [poly])) / area >= ratio) hidden.add(b.id);
   }
-  return hidden;
+  return out;
 }
 
 const frDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;

@@ -438,6 +438,13 @@ export class Ui {
     el.dataset.tone = tone;
   }
 
+  /** Chargement du bâti IGN en cours : signalé sur le bouton, pour ne jamais écraser un message de la barre d'aide. */
+  setContextLoading(on: boolean): void {
+    const b = this.root.querySelector<HTMLElement>('#btn-context');
+    b?.classList.toggle('loading', on);
+    b?.setAttribute('aria-busy', String(on));
+  }
+
   setMode(mode: EditorMode): void {
     this.root.querySelector('#btn-draw')?.classList.toggle('active', mode === 'draw');
     this.root.querySelector('#btn-cadastre')?.classList.toggle('active', mode === 'cadastre');

@@ -67,14 +67,14 @@ export class ParcelEditor {
     this.setMode('draw');
     this.refreshHandles();
     this.refreshDraft();
-    this.cb.onStatus('Cliquez pour poser les angles du terrain. Double-clic, Entrée ou clic sur le 1er point pour fermer. Retour arrière : annuler le dernier point.');
+    this.cb.onStatus('Cliquez pour poser les angles du terrain. Double-clic, Entrée ou clic sur le 1er point pour fermer. Retour arrière : annuler le dernier point. Le bâti voisin est masqué pendant la saisie.');
   }
 
   startCadastre(): void {
     this.draft = [];
     this.setMode('cadastre');
     this.refreshDraft();
-    this.cb.onStatus('Cliquez sur une parcelle (cadastre IGN, France).');
+    this.cb.onStatus('Cliquez sur une parcelle (cadastre IGN, France). Le bâti voisin est masqué pendant la sélection.');
   }
 
   cancel(): void {

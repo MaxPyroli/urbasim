@@ -59,13 +59,14 @@ l'étape 1 n'est pas faite : c'est normal, relancez-le après.
    - **⬇ KML** exporte terrain, zone constructible et volumes extrudés, à ouvrir dans Google Earth (Web, Pro, mobile).
 
 Le bouton **🏙 Voisinage** affiche les bâtiments alentour en volumes 3D gris (voir « Bâti voisin » plus bas) pour situer
-le projet dans son quartier : c'est l'alternative gratuite, sans clé, au fond Google 3D. Les bâtiments existants situés
-sur le terrain sont masqués, puisque le projet les remplacerait.
+le projet dans son quartier : c'est l'alternative gratuite, sans clé, au fond Google 3D. Ce qui existe sur le terrain
+est retiré (les bâtiments sont découpés au contour du terrain), puisque le projet le remplacerait. Le bâti voisin
+disparaît le temps du dessin et de la sélection cadastre : un clic sur un toit viserait sinon le sol derrière lui.
 
 Le bouton **🔗 Lien** copie une URL qui contient le terrain et tous les critères, pour partager ou reprendre plus tard.
 L'**étude d'ombres** (☀) place le soleil à l'heure choisie, le jour même, et projette les ombres du projet et des
-bâtiments voisins. Au démarrage la vue est cadrée à −55° pour passer au-dessus des immeubles d'en face ; « Dessus » et
-« 3D » permettent de recadrer.
+bâtiments voisins. La vue oblique (cadrage automatique à l'arrivée sur un terrain, bouton « 3D ») est inclinée à −55°
+pour passer au-dessus des immeubles d'en face ; « Dessus » cadre à la verticale.
 
 ### Fonds de carte
 
@@ -120,14 +121,20 @@ France ; ailleurs, aucun bâtiment n'est affiché.
   données ouvertes de la Métropole de Lyon ; le nombre d'étages vient des fichiers fonciers MAJIC (DGFiP).
 - **Hauteurs** : celle de la BD TOPO (une valeur de 0 signifie « inconnue »). Sans hauteur (environ 6 % des bâtiments
   à Paris), on estime nombre d'étages × 2,95 m, ou 6 m sans aucune information ; ces volumes sont teintés plus clair.
-- **Masquage** : un bâtiment est masqué si son centre est sur le terrain étudié, ou si au moins 35 % de son emprise
-  s'y trouve. Le seuil évite de masquer un voisin mitoyen dont l'emprise déborderait un peu (le cadastre et la BD TOPO
-  ne coïncident pas exactement, et un terrain dessiné à la main est approximatif).
+- **Terrain et bâti existant** : le terrain étudié est soustrait des bâtiments voisins. Un bâtiment entièrement sur le
+  terrain disparaît ; un bâtiment qui le déborde (voisin mitoyen, ou terrasse de plusieurs lots que la BD TOPO enregistre
+  comme un seul polygone) est découpé : seule la partie hors du terrain reste dessinée, à la même hauteur. Un
+  recouvrement de moins de 0,5 m² (écart de numérisation entre cadastre et BD TOPO) ne change rien. Si le contour du
+  terrain est invalide (côtés qui se croisent, points alignés), rien n'est découpé.
 - **Limites du service** : 30 requêtes par seconde et par IP (au-delà, blocage de 5 secondes), 5 000 objets par requête,
   usage prévu pour des emprises raisonnables. Urbasim demande une zone d'environ 300 à 900 m de large, par pages de
   1 000 bâtiments, avec au plus 4 pages, et réessaie après une coupure ou un blocage. Si la zone est plus dense, un
   message l'indique.
-- **Volumes simples** : prismes à toit plat, sans façades ni toitures réelles, sur un sol plat.
+- **Avec le fond Google 3D**, qui montre déjà les bâtiments, les volumes IGN se superposent à ceux de Google : désactivez
+  🏙 Voisinage pour éviter ce doublon.
+- **Chargement** : un indicateur tourne sur le bouton 🏙 Voisinage pendant la requête (sans masquer les messages).
+- **Volumes simples** : prismes à toit plat, sans façades ni toitures réelles, posés à l'altitude du sol du fond de carte
+  actif (reconstruits si elle change, par exemple en passant de OpenStreetMap à Google 3D).
 
 ## Comment le calcul fonctionne
 
@@ -169,17 +176,23 @@ dans `src/engine/defaults.ts` (`DEFAULT_ASSUMPTIONS`) pour être ajustées.
   s'y trouve, la mesure donne son toit — ajustez alors le décalage.
 - Le bâti voisin est un contexte indicatif : volumes simples, hauteurs parfois estimées, aucune vérification de
   vues ni de prospects sur ces bâtiments.
+- L'affichage 3D demande **WebGL**. Sans lui (navigateur ancien, accélération matérielle coupée), la page l'explique
+  au lieu de rester vide. Si le rendu plante en cours de session, Urbasim relance l'affichage, retire le bâti voisin
+  quand c'est lui qui est en cause (ou si l'erreur se répète), et affiche un message après trois erreurs rapprochées
+  (moins d'une minute d'écart).
 
 ## Ce qui a été vérifié, et ce qui ne l'a pas été
 
 Vérifié (tests automatiques et captures dans un Chromium headless) : le moteur de calcul et la lecture des données du
-bâti (73 tests, dont 5 vrais bâtiments de la BD TOPO), le dessin et l'édition du terrain, l'import cadastre IGN (la
+bâti (99 tests, dont 5 vrais bâtiments de la BD TOPO, le client du service IGN avec un faux réseau — pagination, tentatives, erreurs — et la lecture de l'état enregistré), le dessin et l'édition du terrain, l'import cadastre IGN (la
 surface calculée correspond à la contenance cadastrale), le rendu 3D sur fond OSM et photo IGN, l'étude d'ombres, le lien
 de partage (y compris corrompu), la validité XML du KML, l'affichage mobile, le repli en cas de clé Google invalide.
 Pour le bâti voisin, sur le vrai service de l'IGN : 208 à 217 bâtiments chargés autour d'une parcelle de Paris, un seul
-bâtiment masqué (celui de la parcelle cadastrale AS 0043), et les cas d'échec — service coupé, erreur 503 puis succès à
-la nouvelle tentative, erreur 404 sans nouvelle tentative, terrain hors de France, bascules rapides, plantage du rendu
-(la boucle d'affichage repart).
+bâtiment retiré (celui de la parcelle cadastrale AS 0043), et les cas d'échec — service coupé, erreur 503 puis succès à
+la nouvelle tentative, erreur 404 sans nouvelle tentative, terrain hors de France, bascules rapides, réponse tardive d'une
+autre zone ignorée, terrain effacé pendant le chargement, contour dégénéré, changement d'altitude du sol, bâti masqué
+pendant le dessin et la sélection cadastre, plantage du rendu (une seule boucle d'affichage après chaque reprise ; une
+géométrie invalide retire le bâti sans toucher au reste ; un message apparaît sans WebGL ou après des erreurs répétées).
 
 **Non vérifié** (pas de clé ni d'accès réseau adaptés dans l'environnement de développement) :
 - le fond **Google 3D Tiles avec une vraie clé** (et a fortiori hors EEE), le calage altimétrique qui en dépend, et

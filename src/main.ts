@@ -9,7 +9,7 @@ import {
   compareScenarios,
   computeProject,
   dist,
-  hiddenBuildingIds,
+  carveParcel,
   parcelCenter,
   parseParcelGeoJson,
   pickStreetEdgesFromRoads,
@@ -32,11 +32,36 @@ import { Ui, type UiHandlers } from './app/ui';
 const mapEl = document.getElementById('map')!;
 const uiEl = document.getElementById('ui')!;
 
+/** Toute l'application repose sur WebGL : sans lui, mieux vaut une explication qu'une page vide. */
+function webglAvailable(): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    return Boolean(canvas.getContext('webgl2') || canvas.getContext('webgl'));
+  } catch {
+    return false;
+  }
+}
+
+if (!webglAvailable()) {
+  uiEl.innerHTML =
+    '<div class="nogl"><h1>Urbasim</h1><p>Votre navigateur ne permet pas l’affichage 3D (WebGL). Essayez une version récente de Chrome, Edge ou Firefox, ou activez l’accélération matérielle dans ses réglages.</p></div>';
+  throw new Error('WebGL indisponible : démarrage interrompu');
+}
+
 store.replace(loadInitialState());
 
 const map = new MapView(mapEl);
 const renderer = new SceneRenderer(map);
 const contextRenderer = new ContextRenderer(map);
+
+// La barre de mentions (Cesium, IGN…) peut passer sur plusieurs lignes en largeur réduite : la barre d'aide se place
+// toujours au-dessus d'elle (variable CSS --credit-h), pour ne jamais masquer une mention obligatoire.
+const creditBar = mapEl.querySelector<HTMLElement>('.cesium-viewer-bottom');
+if (creditBar && typeof ResizeObserver !== 'undefined') {
+  const place = () => document.documentElement.style.setProperty('--credit-h', `${creditBar.offsetHeight}px`);
+  new ResizeObserver(place).observe(creditBar);
+  place();
+}
 
 let project: Project | null = null;
 let scenarios: Scenario[] | null = null;
@@ -44,8 +69,10 @@ let hintTimer = 0;
 
 /** Bâtiments voisins déjà chargés, avec la zone qu'ils couvrent. */
 let contextData: { center: LonLat; radius: number; list: ContextBuilding[] } | null = null;
+/** Numéro de la dernière décision de chargement : une requête dont le numéro est dépassé est ignorée. */
 let contextToken = 0;
 let renderErrors = 0;
+let lastRenderErrorAt = -Infinity;
 
 /** Repli géométrique : le côté le plus court (hors arêtes parasites < 3 m) — la façade d'une lanière donne presque toujours sur la rue. */
 function guessStreetEdge(ring: LonLat[]): number {
@@ -109,21 +136,11 @@ function describeError(err: unknown): string {
 
 /** Dernière consigne de l'outil de dessin : on la rétablit quand un message passager s'efface. */
 let editorHint: string | null = null;
-const LOADING_HINT = 'Chargement du bâti IGN…';
 
 function flashHint(msg: string, tone: 'info' | 'error' = 'info', ms = 5000): void {
   ui.setHint(msg, tone);
   window.clearTimeout(hintTimer);
   hintTimer = window.setTimeout(() => ui.setHint(editor.currentMode !== 'idle' ? editorHint : null), ms);
-}
-
-/** Le message de chargement ne doit pas écraser une consigne de dessin, ni effacer un autre message à sa fin. */
-function showLoadingHint(): void {
-  if (editor.currentMode === 'idle') ui.setHint(LOADING_HINT);
-}
-
-function clearLoadingHint(): void {
-  if (document.getElementById('hint')?.textContent === LOADING_HINT) ui.setHint(editor.currentMode !== 'idle' ? editorHint : null);
 }
 
 function center(ring: LonLat[]): LonLat {
@@ -135,22 +152,48 @@ function metersBetween(a: LonLat, b: LonLat): number {
   return Math.hypot((a.lon - b.lon) * 111320 * Math.cos((a.lat * Math.PI) / 180), (a.lat - b.lat) * 110574);
 }
 
-/** Masque, parmi les bâtiments voisins, ceux situés sur le terrain étudié (ils seraient démolis par le projet). */
-function applyContext(): void {
+/** Découpe le bâti voisin par le terrain ; en cas d'échec on garde tout le bâti plutôt qu'une carte vide. */
+function carve(parcel: Parcel, list: ContextBuilding[]): ReturnType<typeof carveParcel> {
+  try {
+    return carveParcel(parcel.ring, list);
+  } catch (err) {
+    console.warn('Découpage du bâti impossible', err);
+    return { hidden: new Set<string>(), remainders: [] };
+  }
+}
+
+/**
+ * Le bâti est montré si c'est demandé et qu'un terrain existe, mais pas pendant le dessin ou la sélection cadastre :
+ * un clic sur un toit viserait le sol derrière lui (le pointage se fait sur le plan du sol).
+ */
+function applyVisibility(): void {
   const { parcel, context } = store.get();
-  contextRenderer.setVisible(context && parcel !== null);
-  if (contextData && parcel) contextRenderer.setHidden(hiddenBuildingIds(parcel.ring, contextData.list));
+  contextRenderer.setVisible(context && parcel !== null && editor.currentMode === 'idle');
+}
+
+/** Resynchronise le bâti avec le terrain actuel : altitude du sol, visibilité et découpage. */
+function applyContext(): void {
+  const { parcel } = store.get();
+  contextRenderer.syncBase();
+  applyVisibility();
+  if (contextData && parcel) {
+    const r = carve(parcel, contextData.list);
+    contextRenderer.setCarved(r.hidden, r.remainders);
+  }
 }
 
 /** Charge (si besoin) le bâti IGN autour du terrain. Les requêtes périmées sont ignorées ; un cache évite de recharger. */
 async function refreshContext(): Promise<void> {
+  const token = ++contextToken; // toute nouvelle décision, même sans chargement, rend caduque une requête en cours
+  ui.setContextLoading(false); // la requête précédente éventuelle est périmée ; seul le chargement ci-dessous rallume l'indicateur
   const { parcel, context } = store.get();
-  if (!parcel || !context) {
-    if (!parcel) {
-      contextRenderer.dispose();
-      contextData = null;
-    }
-    applyContext();
+  if (!parcel) {
+    contextRenderer.dispose();
+    contextData = null;
+    return;
+  }
+  if (!context) {
+    applyVisibility();
     return;
   }
   const c = center(parcel.ring);
@@ -161,20 +204,22 @@ async function refreshContext(): Promise<void> {
     return;
   }
   const radius = Math.min(450, Math.round(150 + spread));
-  const token = ++contextToken;
-  showLoadingHint();
+  ui.setContextLoading(true);
   try {
     const res = await fetchNearbyBuildings(c.lon, c.lat, radius);
-    if (token !== contextToken || !store.get().context) return clearLoadingHint(); // une demande plus récente ou la désactivation a pris le relais
+    const current = store.get().parcel;
+    if (token !== contextToken || !store.get().context || !current) return; // une décision plus récente a pris le relais
+    contextData = null; // enregistré seulement une fois l'affichage réussi : un échec ne laisse pas un cache sans affichage
+    const r = carve(current, res.buildings);
+    contextRenderer.set(res.buildings, r.hidden, r.remainders);
     contextData = { center: c, radius, list: res.buildings };
-    contextRenderer.set(res.buildings, hiddenBuildingIds(parcel.ring, res.buildings));
-    applyContext();
-    if (res.buildings.length === 0) flashHint('Aucun bâtiment IGN ici : la BD TOPO ne couvre que la France.', 'info', 6000);
+    applyVisibility();
+    if (res.buildings.length === 0) flashHint(`Aucun bâtiment IGN dans un rayon de ${radius} m (la BD TOPO ne couvre que la France).`, 'info', 6000);
     else if (res.truncated) flashHint('Zone très dense : seuls les premiers milliers de bâtiments sont affichés.', 'info', 6000);
-    else clearLoadingHint();
   } catch (err) {
     if (token === contextToken) flashHint(`Bâti IGN indisponible : ${describeError(err)}`, 'error', 6000);
-    else clearLoadingHint();
+  } finally {
+    if (token === contextToken) ui.setContextLoading(false);
   }
 }
 
@@ -340,7 +385,10 @@ const editor = new ParcelEditor(map, {
     editorHint = msg;
     ui.setHint(msg);
   },
-  onMode: (mode) => ui.setMode(mode),
+  onMode: (mode) => {
+    ui.setMode(mode);
+    applyVisibility();
+  },
 });
 
 // ---------- calcul et rendu
@@ -390,20 +438,68 @@ store.subscribe((s, changed) => {
   scheduleRender();
 });
 
-// Les géométries du bâti viennent d'un service externe : si l'une d'elles faisait échouer le rendu, on retire le bâti
-// et on relance la boucle de rendu plutôt que de laisser toute la carte figée.
+// ---------- robustesse du rendu
+//
+// Cesium arrête sa boucle à la première erreur. `showRenderLoopErrors` est désactivé pour décider nous-mêmes quoi faire :
+// relancer l'affichage (deux fois au plus par minute), retirer le bâti voisin s'il est en cause, ou afficher un message.
+
+/** Vrai entre l'erreur et la relance de la boucle. */
+let restarting = false;
+/** Vrai une fois le panneau d'erreur affiché : plus aucune relance. */
+let renderGaveUp = false;
+
+function recoverRendering(error: unknown, fromRender: boolean): void {
+  const now = performance.now();
+  renderErrors = now - lastRenderErrorAt > 60000 ? 1 : renderErrors + 1; // les erreurs isolées dans le temps ne s'accumulent pas
+  lastRenderErrorAt = now;
+  // Les géométries du bâti viennent d'un service externe. Si l'erreur est celle que l'une d'elles a mémorisée, on retire
+  // le bâti ; si la même erreur revient sans qu'on sache d'où elle vient, on le retire aussi par précaution.
+  const ours = fromRender && contextRenderer.ownsError(error);
+  const removed = ours || (fromRender && renderErrors >= 2 && contextRenderer.count > 0);
+  if (removed) {
+    contextRenderer.dispose();
+    contextData = null;
+    store.set({ context: false });
+  }
+  if (renderErrors <= 2) {
+    // Cesium a déjà arrêté sa boucle, mais son ancienne chaîne d'animation tourne encore une image : on ne relance
+    // qu'après deux images, sinon la scène serait dessinée deux fois par image pour le reste de la session.
+    restarting = true;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        restarting = false;
+        map.viewer.useDefaultRenderLoop = true;
+      }),
+    );
+    flashHint(
+      removed
+        ? 'Une erreur d’affichage 3D est survenue : le bâti voisin a été retiré. Réactivez « Voisinage » pour réessayer.'
+        : 'Une erreur d’affichage 3D est survenue ; l’affichage a été relancé.',
+      'error',
+      9000,
+    );
+  } else {
+    renderGaveUp = true;
+    map.viewer.cesiumWidget.showErrorPanel(
+      'Erreur d’affichage 3D',
+      'L’affichage 3D s’est arrêté après plusieurs erreurs. Rechargez la page.',
+      error === undefined ? undefined : String(error),
+    );
+  }
+}
+
 map.viewer.scene.renderError.addEventListener((_scene, error) => {
   console.error('Erreur de rendu Cesium', error);
-  contextRenderer.dispose();
-  contextData = null;
-  if (++renderErrors <= 2) {
-    window.setTimeout(() => (map.viewer.useDefaultRenderLoop = true), 0);
-    flashHint('Une erreur d’affichage 3D est survenue : le bâti voisin a été retiré. Réactivez « Voisinage » pour réessayer.', 'error', 9000);
-    store.set({ context: false });
-  } else {
-    flashHint('Erreur d’affichage 3D répétée : rechargez la page.', 'error', 30000);
-  }
+  recoverRendering(error, true);
 });
+
+// Une erreur levée hors du rendu proprement dit (horloge, entités) arrête la boucle sans passer par `renderError` :
+// sans cette surveillance la carte resterait figée sans aucun message.
+window.setInterval(() => {
+  if (restarting || renderGaveUp || map.viewer.isDestroyed() || map.viewer.useDefaultRenderLoop) return;
+  console.error('Boucle de rendu Cesium arrêtée hors du rendu');
+  recoverRendering(undefined, false);
+}, 1000);
 
 // ---------- démarrage
 
@@ -424,4 +520,4 @@ if (initial.parcel) {
 if (initial.baseLayer !== 'osm') void applyBaseLayer(initial.baseLayer);
 
 // utile pour les tests de bout en bout et le débogage
-(window as unknown as Record<string, unknown>).urbasim = { store, map, getProject: () => project, centroid, frame, shareLink, contextRenderer, getContext: () => contextData, getHidden: () => { const st = store.get(); return contextData && st.parcel ? [...hiddenBuildingIds(st.parcel.ring, contextData.list)] : []; } };
+(window as unknown as Record<string, unknown>).urbasim = { store, map, afterParcelChange, getProject: () => project, centroid, frame, shareLink, contextRenderer, getContext: () => contextData, getCarve: () => { const st = store.get(); return contextData && st.parcel ? carve(st.parcel, contextData.list) : null; } };
