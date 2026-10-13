@@ -47,6 +47,7 @@ export const DEFAULT_CRITERIA: Criteria = {
   minOpenGround: 0.2,
   maxFAR: null,
   footprintShape: 'adapte',
+  placement: 'auto',
 
   groundFloorUse: 'logement',
   upperUse: 'logement',

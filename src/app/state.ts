@@ -97,6 +97,7 @@ export function sanitize(raw: unknown): AppState {
   if (r.criteria && typeof r.criteria === 'object') {
     base.criteria = { ...base.criteria, ...r.criteria, mix: { ...base.criteria.mix, ...(r.criteria.mix ?? {}) }, edgeSetbacks: { ...(r.criteria.edgeSetbacks ?? {}) } };
   }
+  if (!['auto', 'rue', 'fond'].includes(base.criteria.placement)) base.criteria.placement = DEFAULT_CRITERIA.placement;
   if (Number.isFinite(r.groundOffset)) base.groundOffset = r.groundOffset!;
   if (r.baseLayer === 'osm' || r.baseLayer === 'ortho' || r.baseLayer === 'google') base.baseLayer = r.baseLayer;
   if (typeof r.shadows === 'boolean') base.shadows = r.shadows;

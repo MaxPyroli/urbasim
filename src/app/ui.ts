@@ -94,6 +94,17 @@ const GROUPS: Group[] = [
           ['rectangle', 'Rectangle inscrit'],
         ],
       },
+      {
+        t: 'sel',
+        key: 'placement',
+        label: 'Implantation dans la profondeur',
+        options: [
+          ['auto', 'Automatique (emprise la plus grande)'],
+          ['rue', 'Côté rue'],
+          ['fond', 'En fond de parcelle'],
+        ],
+        help: 'En fond de parcelle, la façade sur rue donne sur une cour ou un jardin : accès et défense incendie à prévoir.',
+      },
     ],
   },
   {

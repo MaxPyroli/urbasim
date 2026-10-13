@@ -13,7 +13,7 @@ import {
   ringArea,
   toMulti,
 } from './geometry';
-import type { FootprintShape, MultiPolygon, PolygonRings, Ring } from './types';
+import type { FootprintShape, MultiPolygon, Placement, PolygonRings, Ring, Vec2 } from './types';
 
 export interface FootprintOptions {
   shape: FootprintShape;
@@ -21,6 +21,8 @@ export interface FootprintOptions {
   minWidth: number;
   /** Plafond de surface d'emprise (CES, densité…), null = aucun. */
   areaCap: number | null;
+  /** Position dans la profondeur : côté rue, en fond de parcelle, ou la meilleure des deux. */
+  placement: Placement;
 }
 
 export interface FootprintResult {
@@ -28,10 +30,14 @@ export interface FootprintResult {
   ring: Ring | null;
   /** Contraintes qui ont borné l'emprise. */
   limitedBy: string[];
+  /** Où l'emprise a été placée. */
+  at: 'rue' | 'fond';
   reason?: string;
 }
 
 const MIN_AREA = 12;
+/** En mode automatique, le fond de parcelle ne l'emporte sur la rue que s'il offre au moins 3 % d'emprise de plus. */
+const AUTO_GAIN = 1.03;
 
 /** Cherche la plus grande profondeur d ∈ [0, dMax] telle que area(d) ≤ cap (area croissante). */
 function bisectDepth(areaAt: (d: number) => number, dMax: number, cap: number): number {
@@ -160,14 +166,15 @@ function largestRectangle(comp: PolygonRings, opts: FootprintOptions): { ring: R
   return { ring: rectRing(x0, y0, x1, y1), limitedBy };
 }
 
-/**
- * Génère l'emprise du bâtiment dans l'enveloppe constructible.
- * Tout se passe dans le repère (u le long de la rue, v vers le fond de parcelle).
- */
-export function generateFootprint(envelope: MultiPolygon, frame: Frame, opts: FootprintOptions): FootprintResult {
-  if (envelope.length === 0) return { ring: null, limitedBy: ['retraits'], reason: 'Les retraits laissent un terrain inconstructible.' };
-  const env = frame.toMulti(envelope);
-  let best: { ring: Ring; limitedBy: string[]; area: number } | null = null;
+interface Candidate {
+  ring: Ring;
+  limitedBy: string[];
+  area: number;
+}
+
+/** Meilleure emprise de l'enveloppe, calculée depuis le bas du repère (v = 0 : côté rue). */
+function bestIn(env: MultiPolygon, opts: FootprintOptions): Candidate | null {
+  let best: Candidate | null = null;
   for (const comp of env) {
     if (polygonArea(comp) < MIN_AREA) continue;
     const res = opts.shape === 'rectangle' ? largestRectangle(comp, opts) : adaptedFootprint(comp, opts);
@@ -175,16 +182,50 @@ export function generateFootprint(envelope: MultiPolygon, frame: Frame, opts: Fo
     const area = ringArea(res.ring);
     if (!best || area > best.area) best = { ...res, area };
   }
+  return best;
+}
+
+/** Symétrie par rapport à la rue : le fond de parcelle devient le côté d'où l'on tranche. */
+const mirrorEnv = (m: MultiPolygon): MultiPolygon => m.map((poly) => poly.map((r) => r.map(([x, y]) => [x, -y] as Vec2)));
+/** Symétrique d'un contour, parcouru en sens inverse pour garder son orientation. */
+const mirrorRing = (r: Ring): Ring => r.map(([x, y]) => [x, -y] as Vec2).reverse();
+
+/**
+ * Génère l'emprise du bâtiment dans l'enveloppe constructible.
+ * Tout se passe dans le repère (u le long de la rue, v vers le fond de parcelle). Le bâtiment se place soit côté rue
+ * (on tranche depuis la rue), soit en fond de parcelle (même calcul dans le repère inversé), soit — en mode
+ * automatique — là où l'emprise est la plus grande, la rue l'emportant à égalité.
+ */
+export function generateFootprint(envelope: MultiPolygon, frame: Frame, opts: FootprintOptions): FootprintResult {
+  if (envelope.length === 0) return { ring: null, limitedBy: ['retraits'], at: 'rue', reason: 'Les retraits laissent un terrain inconstructible.' };
+  const env = frame.toMulti(envelope);
+  const placement: Placement = opts.placement === 'fond' || opts.placement === 'auto' ? opts.placement : 'rue';
+  const viable = (c: Candidate | null): c is Candidate => c !== null && c.area >= MIN_AREA && minWidth(c.ring) >= opts.minWidth;
+
+  let front = placement === 'fond' ? null : bestIn(env, opts);
+  let back: Candidate | null = null;
+  if (placement !== 'rue') {
+    const m = bestIn(mirrorEnv(env), opts);
+    back = m && { ...m, ring: mirrorRing(m.ring) };
+  }
+  if (placement === 'fond' && !viable(back)) front = bestIn(env, opts); // repli : mieux vaut un bâtiment sur rue que rien
+
+  let at: 'rue' | 'fond' = 'rue';
+  if (placement === 'fond') at = viable(back) || !viable(front) ? 'fond' : 'rue';
+  else if (placement === 'auto') at = viable(back) && (!viable(front) || back.area > front.area * AUTO_GAIN) ? 'fond' : 'rue';
+
+  const best = (at === 'fond' ? back : front) ?? front ?? back;
   if (!best || best.area < MIN_AREA) {
-    return { ring: null, limitedBy: ['retraits'], reason: 'Emprise constructible trop petite après retraits.' };
+    return { ring: null, limitedBy: ['retraits'], at, reason: 'Emprise constructible trop petite après retraits.' };
   }
   const limitedBy = best.limitedBy.length > 0 ? best.limitedBy : ['retraits'];
   if (minWidth(best.ring) < opts.minWidth) {
     return {
       ring: null,
       limitedBy,
+      at,
       reason: `Largeur exploitable (${minWidth(best.ring).toFixed(1)} m) inférieure au minimum de ${opts.minWidth} m.`,
     };
   }
-  return { ring: frame.fromRing(best.ring), limitedBy };
+  return { ring: frame.fromRing(best.ring), limitedBy, at };
 }

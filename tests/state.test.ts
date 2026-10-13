@@ -50,4 +50,10 @@ describe('lecture de l’état enregistré ou partagé', () => {
     expect(sanitize({ baseLayer: 'carte-secrete' }).baseLayer).toBe('osm');
     expect(sanitize({ baseLayer: 'ortho' }).baseLayer).toBe('ortho');
   });
+
+  it('une implantation inconnue (lien ancien ou corrompu) retombe sur le défaut, une valeur valide est gardée', () => {
+    expect(sanitize({ criteria: { placement: 'fond' } }).criteria.placement).toBe('fond');
+    expect(sanitize({ criteria: { placement: 'ailleurs' } }).criteria.placement).toBe('auto');
+    expect(sanitize({ criteria: { levels: 4 } }).criteria.placement).toBe('auto');
+  });
 });

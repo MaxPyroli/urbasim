@@ -145,9 +145,14 @@ Tout est dans `src/engine/` : du TypeScript pur, sans dépendance au navigateur,
    chaque côté, tous les points situés à moins de `retrait` de ce côté (distance au segment, pas à la droite — ce qui
    traite correctement les angles rentrants et les terrains en L). Le **prospect** (L ≥ H/2, H/3 ou H) relève les
    retraits des limites non mitoyennes en fonction de la hauteur ; les côtés à 0 ne sont pas touchés.
-3. **Emprise** : dans un repère aligné sur la rue, on tranche la zone constructible à la profondeur maximale depuis la
-   rue (formes « adaptée » au terrain ou « rectangle inscrit »). L'emprise est réduite si l'emprise au sol ou la
-   densité maximales l'exigent. L'outil indique ce qui a limité l'emprise.
+3. **Emprise** : dans un repère aligné sur la rue, on tranche la zone constructible à la profondeur maximale (formes
+   « adaptée » au terrain ou « rectangle inscrit »). **Implantation** : côté rue, en fond de parcelle (même calcul depuis
+   le fond, la façade sur rue donne alors sur une cour ou un jardin), ou *automatique* — le défaut — qui retient le fond
+   seulement s'il offre au moins 3 % d'emprise de plus (terrain qui s'élargit vers l'arrière), la rue l'emportant à
+   égalité. Sur un lot rectangulaire les deux positions sont équivalentes : choisissez « En fond de parcelle » pour
+   libérer la rue. L'emprise est réduite si l'emprise au sol ou la densité maximales l'exigent. L'outil indique ce qui a
+   limité l'emprise. Non modélisés : l'accès depuis la rue jusqu'à un bâtiment en fond (cheminement, défense incendie)
+   et la possibilité de deux corps de bâtiment (sur rue et en fond).
 4. **Niveaux** : hauteur = RDC + x étages (+ attique en retrait). Surface de plancher = emprise moins l'épaisseur des
    murs, **hors parkings**. Noyau escalier/ascenseur déduit à chaque niveau (ascenseur à partir de R+3).
    Rez-de-chaussée : hall, local poubelles et **local vélos** (0,75 m² par T1/T2, 1,5 m² au-delà, 3 m² minimum).
@@ -184,7 +189,7 @@ dans `src/engine/defaults.ts` (`DEFAULT_ASSUMPTIONS`) pour être ajustées.
 ## Ce qui a été vérifié, et ce qui ne l'a pas été
 
 Vérifié (tests automatiques et captures dans un Chromium headless) : le moteur de calcul et la lecture des données du
-bâti (99 tests, dont 5 vrais bâtiments de la BD TOPO, le client du service IGN avec un faux réseau — pagination, tentatives, erreurs — et la lecture de l'état enregistré), le dessin et l'édition du terrain, l'import cadastre IGN (la
+bâti (111 tests, dont 5 vrais bâtiments de la BD TOPO, le client du service IGN avec un faux réseau — pagination, tentatives, erreurs — et la lecture de l'état enregistré), le dessin et l'édition du terrain, l'import cadastre IGN (la
 surface calculée correspond à la contenance cadastrale), le rendu 3D sur fond OSM et photo IGN, l'étude d'ombres, le lien
 de partage (y compris corrompu), la validité XML du KML, l'affichage mobile, le repli en cas de clé Google invalide.
 Pour le bâti voisin, sur le vrai service de l'IGN : 208 à 217 bâtiments chargés autour d'une parcelle de Paris, un seul

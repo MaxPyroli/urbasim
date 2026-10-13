@@ -14,6 +14,8 @@ export type EdgeKind = 'voie' | 'laterale' | 'fond';
 export type Typology = 'T1' | 'T2' | 'T3' | 'T4' | 'T5';
 export type ParkingStrategy = 'auto' | 'sous-sol' | 'surface' | 'rdc' | 'aucun';
 export type FootprintShape = 'adapte' | 'rectangle';
+/** Position du bâtiment dans la profondeur du terrain : côté rue, en fond de parcelle, ou là où l'emprise est la plus grande. */
+export type Placement = 'auto' | 'rue' | 'fond';
 
 export const TYPOLOGIES: Typology[] = ['T1', 'T2', 'T3', 'T4', 'T5'];
 
@@ -56,6 +58,7 @@ export interface Criteria {
   /** Densité maximale : SDP / surface de parcelle. */
   maxFAR: number | null;
   footprintShape: FootprintShape;
+  placement: Placement;
 
   // Programme
   groundFloorUse: Use;
@@ -194,6 +197,8 @@ export interface Project {
   edges: EdgeInfo[];
   envelope: MultiPolygon;
   footprint: Ring | null;
+  /** Où l'emprise a été placée : sur rue ou en fond de parcelle. */
+  placement: 'rue' | 'fond';
   footprintEdges: FootprintEdge[];
   atticFootprint: Ring | null;
   levels: LevelPlan[];

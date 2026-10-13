@@ -9,11 +9,13 @@ import {
   compareScenarios,
   computeEdges,
   computeProject,
+  difference,
   isSimplePolygon,
   minWidth,
   multiArea,
   parseParcelGeoJson,
   ringArea,
+  toMulti,
   type Criteria,
   type LonLat,
   type Parcel,
@@ -458,5 +460,103 @@ describe('contours invalides', () => {
     expect(p.footprint).not.toBeNull();
     expect(Date.now() - t0).toBeLessThan(5000);
     expect(p.indicators.depth).toBeLessThanOrEqual(14.01);
+  });
+});
+
+describe('implantation dans la profondeur du terrain (rue / fond / automatique)', () => {
+  const ys = (r: number[][]) => ({ min: Math.min(...r.map((q) => q[1])), max: Math.max(...r.map((q) => q[1])) });
+  const signed = (r: number[][]) => r.reduce((s, p, i) => s + (p[0] * r[(i + 1) % r.length][1] - r[(i + 1) % r.length][0] * p[1]), 0) / 2;
+  // lot de 8 × 30 m, rue au sud ; sans retrait de fond la zone constructible va jusqu'au bout du terrain
+  const base = { setbackFond: 0, maxDepth: 12 };
+  // lot qui s'élargit vers le fond : 8 m côté rue, 14 m au fond
+  const widening = () =>
+    parcelFromLocal(
+      [
+        [0, 0],
+        [8, 0],
+        [14, 30],
+        [0, 30],
+      ],
+      [0],
+    );
+
+  it('par défaut, l’implantation est automatique', () => {
+    expect(DEFAULT_CRITERIA.placement).toBe('auto');
+  });
+
+  it('côté rue : le bâtiment colle à la rue (comportement historique), le fond reste libre', () => {
+    const p = computeProject(strip(), crit({ ...base, placement: 'rue' }));
+    const t = ys(p.parcelRing), f = ys(p.footprint!);
+    expect(f.min).toBeCloseTo(t.min, 1);
+    expect(f.max - f.min).toBeCloseTo(12, 1);
+    expect(p.placement).toBe('rue');
+  });
+
+  it('en fond de parcelle : même emprise, collée au fond, la façade sur rue donne sur une cour', () => {
+    const rue = computeProject(strip(), crit({ ...base, placement: 'rue' }));
+    const fond = computeProject(strip(), crit({ ...base, placement: 'fond' }));
+    const t = ys(fond.parcelRing), f = ys(fond.footprint!);
+    expect(f.max).toBeCloseTo(t.max, 1);
+    expect(f.max - f.min).toBeCloseTo(12, 1);
+    expect(fond.indicators.footprintArea).toBeCloseTo(rue.indicators.footprintArea, 1);
+    expect(fond.placement).toBe('fond');
+    expect(fond.footprintEdges.some((e) => e.role === 'street')).toBe(false); // plus aucune façade sur la rue
+    expect(Math.sign(signed(fond.footprint!))).toBe(Math.sign(signed(rue.footprint!))); // même orientation du contour
+  });
+
+  it('retrait de fond : le bâtiment en fond de parcelle s’arrête au retrait', () => {
+    const p = computeProject(strip(), crit({ setbackFond: 4, maxDepth: 12, placement: 'fond' }));
+    expect(ys(p.parcelRing).max - ys(p.footprint!).max).toBeCloseTo(4, 1);
+  });
+
+  it('automatique, lot rectangulaire : à égalité, on garde la rue', () => {
+    const p = computeProject(strip(), crit({ ...base, placement: 'auto' }));
+    expect(ys(p.footprint!).min).toBeCloseTo(ys(p.parcelRing).min, 1);
+    expect(p.placement).toBe('rue');
+    expect(p.checks.some((c) => c.id === 'placement')).toBe(false);
+  });
+
+  it('automatique, lot qui s’élargit vers le fond : le bâtiment va au fond, où l’emprise est plus grande', () => {
+    const rue = computeProject(widening(), crit({ ...base, placement: 'rue' }));
+    const auto = computeProject(widening(), crit({ ...base, placement: 'auto' }));
+    expect(auto.placement).toBe('fond');
+    expect(auto.indicators.footprintArea).toBeGreaterThan(rue.indicators.footprintArea * 1.2);
+    expect(ys(auto.footprint!).max).toBeCloseTo(ys(auto.parcelRing).max, 1);
+    expect(auto.checks.find((c) => c.id === 'placement')?.status).toBe('info');
+    // le choix « côté rue » reste possible et donne l’ancienne emprise
+    expect(rue.placement).toBe('rue');
+    expect(ys(rue.footprint!).min).toBeCloseTo(ys(rue.parcelRing).min, 1);
+  });
+
+  it('automatique, lot qui se rétrécit vers le fond : la rue l’emporte', () => {
+    const narrowing = parcelFromLocal([[0, 0], [14, 0], [8, 30], [0, 30]], [0]);
+    expect(computeProject(narrowing, crit({ ...base, placement: 'auto' })).placement).toBe('rue');
+  });
+
+  it('en fond de parcelle, le plafond d’emprise (CES) est respecté', () => {
+    const p = computeProject(strip(), crit({ ...base, maxCoverage: 0.3, placement: 'fond' }));
+    expect(p.indicators.footprintArea).toBeLessThanOrEqual(0.3 * p.parcelArea + 0.5);
+    expect(ys(p.footprint!).max).toBeCloseTo(ys(p.parcelRing).max, 1);
+  });
+
+  it('en fond de parcelle, la forme « rectangle inscrit » donne un rectangle collé au fond', () => {
+    const p = computeProject(widening(), crit({ ...base, footprintShape: 'rectangle', placement: 'fond' }));
+    expect(p.footprint!.length).toBe(4);
+    expect(ys(p.footprint!).max).toBeCloseTo(ys(p.parcelRing).max, 1);
+    const rue = computeProject(widening(), crit({ ...base, footprintShape: 'rectangle', placement: 'rue' }));
+    expect(p.indicators.footprintArea).toBeGreaterThan(rue.indicators.footprintArea);
+  });
+
+  it('l’emprise reste dans l’enveloppe constructible quel que soit le choix', () => {
+    for (const placement of ['rue', 'fond', 'auto'] as const) {
+      const p = computeProject(widening(), crit({ ...base, setbackLateral: 1, placement }));
+      expect(multiArea(difference(toMulti(p.footprint!), p.envelope))).toBeLessThan(0.05);
+    }
+  });
+
+  it('une valeur inconnue se comporte comme « côté rue »', () => {
+    const a = computeProject(strip(), crit({ ...base, placement: 'ailleurs' as never }));
+    const b = computeProject(strip(), crit({ ...base, placement: 'rue' }));
+    expect(a.footprint).toEqual(b.footprint);
   });
 });

@@ -59,6 +59,7 @@ export function emptyProject(origin: LonLat, parcelRing: Ring, c: Criteria): Pro
     edges: [],
     envelope: [],
     footprint: null,
+    placement: 'rue',
     footprintEdges: [],
     atticFootprint: null,
     levels: [],
@@ -139,7 +140,8 @@ export function computeProject(parcel: Parcel, criteria: Criteria, assumptions: 
   const parcelArea = project.parcelArea;
   const capCES = c.maxCoverage !== null ? c.maxCoverage * parcelArea : null;
   let areaCap = capCES;
-  let fp = generateFootprint(envelope, frame, { shape: c.footprintShape, maxDepth: c.maxDepth, minWidth: c.minWidth, areaCap });
+  const fpOptions = (cap: number | null) => ({ shape: c.footprintShape, maxDepth: c.maxDepth, minWidth: c.minWidth, areaCap: cap, placement: c.placement });
+  let fp = generateFootprint(envelope, frame, fpOptions(areaCap));
   let limitedBy = fp.limitedBy;
   let footprint: Ring | null = fp.ring;
   const failReason = fp.reason;
@@ -171,7 +173,7 @@ export function computeProject(parcel: Parcel, criteria: Criteria, assumptions: 
       if (sdp <= target + 0.5) break;
       const fpArea = ringArea(footprint);
       areaCap = Math.min(areaCap ?? Infinity, fpArea * (target / sdp) * 0.995);
-      fp = generateFootprint(envelope, frame, { shape: c.footprintShape, maxDepth: c.maxDepth, minWidth: c.minWidth, areaCap });
+      fp = generateFootprint(envelope, frame, fpOptions(areaCap));
       if (!fp.ring) {
         project.limitedBy = [...new Set([...limitedBy, 'densité'])];
         project.checks = [
@@ -243,6 +245,7 @@ export function computeProject(parcel: Parcel, criteria: Criteria, assumptions: 
   };
 
   project.footprint = footprint;
+  project.placement = fp.at;
   project.footprintEdges = b.fpEdges;
   project.atticFootprint = b.attic;
   project.levels = levels;
@@ -303,6 +306,9 @@ function buildChecks(p: Project, c: Criteria, a: Assumptions): Check[] {
     add('rdcStreet', 'Logement en RDC sur rue', 'info', 'Prévoir un traitement des vues (surélévation, rideau, haie) ou un RDC actif.');
   }
   if (effectiveGroundUse(c) === 'parking' && p.levels.length > 0) add('rdcParking', 'Parking en RDC', 'info', 'Le rez-de-chaussée est affecté au stationnement : pas de surface de plancher créée.');
+  if (c.placement === 'auto' && p.placement === 'fond') {
+    add('placement', 'Implantation', 'info', 'Bâtiment placé en fond de parcelle : l’emprise y est plus grande que côté rue (accès et défense incendie à prévoir).');
+  }
   if (p.limitedBy.length > 0) add('limit', 'Emprise limitée par', 'info', p.limitedBy.join(', '));
   return checks;
 }
