@@ -22,6 +22,24 @@ npm run dev        # http://localhost:5173
 Autres commandes : `npm test` (tests du moteur), `npm run typecheck`, `npm run build` (site statique dans `dist/`,
 hébergeable n'importe où).
 
+## Version en ligne (GitHub Pages)
+
+Le workflow `.github/workflows/pages.yml` teste, compile et publie le site à chaque push sur la **branche par défaut**
+du dépôt (quel que soit son nom). À faire une seule fois :
+
+1. Dépôt → **Settings → Pages → Build and deployment → Source : « GitHub Actions »**.
+2. Dépôt → **Actions → Pages → Run workflow** (ou simplement pousser un nouveau commit).
+
+Adresse attendue : `https://maxpyroli.github.io/urbasim/`. Le premier passage du workflow échoue tant que
+l'étape 1 n'est pas faite : c'est normal, relancez-le après.
+
+À savoir :
+- GitHub Pages sur un **dépôt privé** exige un abonnement payant (Pro, Team ou Enterprise), et le site publié est
+  **public** même si le dépôt reste privé. Sur l'offre gratuite, le dépôt doit être public.
+- L'application ne contient aucun secret : chaque utilisateur colle sa propre clé Google dans son navigateur.
+- Pour le fond Google 3D, restreignez la clé aux adresses `https://maxpyroli.github.io/urbasim/*` et
+  `http://localhost:5173/*` (restriction « Sites web » / référents HTTP dans Google Cloud).
+
 ## Utilisation
 
 1. **Terrain** — au choix :
