@@ -1,0 +1,27 @@
+{
+  "name": "urbasim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Simulateur de faisabilité immobilière : dessinez un terrain, fixez vos critères (R+x, stationnement…), obtenez un immeuble en 3D.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cesium": "^1.146.0",
+    "polygon-clipping": "^0.15.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "vite-plugin-cesium": "^1.2.23",
+    "vitest": "^5.0.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
