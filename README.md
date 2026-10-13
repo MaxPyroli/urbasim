@@ -36,9 +36,8 @@ l'étape 1 n'est pas faite : c'est normal, relancez-le après.
 À savoir :
 - GitHub Pages sur un **dépôt privé** exige un abonnement payant (Pro, Team ou Enterprise), et le site publié est
   **public** même si le dépôt reste privé. Sur l'offre gratuite, le dépôt doit être public.
-- L'application ne contient aucun secret : chaque utilisateur colle sa propre clé Google dans son navigateur.
-- Pour le fond Google 3D, restreignez la clé aux adresses `https://maxpyroli.github.io/urbasim/*` et
-  `http://localhost:5173/*` (restriction « Sites web » / référents HTTP dans Google Cloud).
+- L'application ne contient aucun secret : chaque utilisateur colle sa propre clé Google dans son navigateur
+  (voir la section sur le fond Google 3D, et notamment sa limite géographique).
 
 ## Utilisation
 
@@ -70,11 +69,35 @@ L'**étude d'ombres** (☀) place le soleil à l'heure choisie, le jour même, e
 | Photo (orthophoto IGN) | non | France uniquement |
 | Google 3D (Photorealistic 3D Tiles) | **oui** | voir ci-dessous |
 
-Pour le fond Google 3D : créez une clé API Google Maps Platform avec les API **Map Tiles** et **Geocoding** activées
-(la facturation doit être activée sur le projet Google Cloud), puis collez-la dans ⚙. Elle reste dans le navigateur et
-n'est jamais incluse dans le lien de partage ; restreignez-la à votre domaine. Les conditions de Google imposent
-d'utiliser leur géocodeur avec ces tuiles : la recherche d'adresse bascule donc automatiquement sur l'API Geocoding
-de Google quand ce fond est actif (et sur Nominatim/OpenStreetMap sinon).
+#### Fond Google 3D : lire avant de créer une clé
+
+**Indisponible si l'adresse de facturation du projet Google est dans l'Espace économique européen (France
+comprise).** Google renvoie une erreur 403 pour les Photorealistic 3D Tiles dans ce cas (page Google « Map Tiles API
+in the EEA », mise à jour le 8 octobre 2026). La règle suit l'adresse du compte de facturation, pas la localisation de
+l'utilisateur ; ne renseignez pas une fausse adresse pour la contourner. Google cite les « 3D Maps » de l'API
+Maps JavaScript comme alternative possible, sans préciser leur disponibilité dans l'EEE ; Urbasim ne les utilise pas.
+
+Si votre facturation est réellement hors EEE :
+
+1. Console Google Cloud → créer un projet → rattacher un **compte de facturation** (carte bancaire obligatoire ; les
+   nouveaux comptes Google Cloud ont 300 $ de crédit d'essai valables 90 jours).
+2. Activer **Map Tiles API** et **Geocoding API** (API et services → Bibliothèque).
+3. Identifiants → Créer des identifiants → **Clé API**, puis la coller dans ⚙ dans Urbasim.
+4. Limiter la clé à ces deux API, **fixer des quotas** (Google Maps Platform → Quotas) et créer une **alerte de
+   budget**. Une alerte seule ne plafonne pas la dépense.
+
+Coûts (grille Google du 8 octobre 2026, à revérifier) : 1 000 requêtes de tuiles 3D gratuites par mois puis 6 $ les
+1 000 jusqu'à 100 000 ; 10 000 géocodages gratuits par mois puis 5 $ les 1 000. La documentation de Google ne dit pas
+clairement si c'est la requête racine ou chaque tuile qui est facturée : surveillez la consommation les premiers jours.
+
+La clé reste dans le navigateur et n'est jamais incluse dans le lien de partage. Google range Map Tiles et Geocoding
+parmi les API « web service » pour lesquelles il recommande des restrictions par adresse IP, inadaptées à un site
+public : une restriction par site (référent HTTP) n'est pas garantie de fonctionner et n'est pas documentée pour ces
+API. Traitez donc la clé comme **exposée** : c'est pourquoi les quotas sont la vraie protection.
+
+Cesium indique que ces tuiles ne doivent être utilisées qu'avec le géocodeur de Google : la recherche d'adresse bascule
+donc automatiquement sur l'API Geocoding quand ce fond est actif (et sur Nominatim/OpenStreetMap sinon). Google exige
+aussi l'affichage de son logo et des attributions de données, ce que fait l'application avec ce fond.
 
 ## Comment le calcul fonctionne
 
@@ -123,7 +146,8 @@ fond OSM et photo IGN, l'étude d'ombres, le lien de partage (y compris corrompu
 mobile, le repli en cas de clé Google invalide.
 
 **Non vérifié** (pas de clé ni d'accès réseau adaptés dans l'environnement de développement) :
-- le fond **Google 3D Tiles avec une vraie clé**, et le calage altimétrique qui en dépend ;
+- le fond **Google 3D Tiles avec une vraie clé** (et a fortiori hors EEE), le calage altimétrique qui en dépend, et
+  l'affichage de l'attribution Google ;
 - la détection du côté rue via **Overpass/OpenStreetMap** (le service était injoignable ; le calcul de choix du côté
   est testé, l'appel réseau retombe silencieusement sur l'heuristique « plus petit côté ») ;
 - l'ouverture du **KML dans Google Earth** lui-même (le fichier est du KML 2.2 standard avec polygones extrudés).

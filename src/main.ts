@@ -141,7 +141,7 @@ async function applyBaseLayer(layer: 'osm' | 'ortho' | 'google'): Promise<void> 
     if (parcel) await afterParcelChange(false);
   } catch (err) {
     ui.setBaseLayer(store.get().baseLayer);
-    flashHint(`Impossible d’activer ce fond : ${describeError(err)}. Vérifiez la clé (restrictions de domaine) et que l’API Map Tiles est activée.`, 'error', 9000);
+    flashHint(`Impossible d’activer ce fond : ${describeError(err)}. Vérifiez la clé, que l’API Map Tiles est activée, et que l’adresse de facturation du projet est hors EEE (ces tuiles y sont indisponibles).`, 'error', 9000);
     if (layer === 'google') await map.setBaseLayer('osm', '').catch(() => undefined);
     store.set({ baseLayer: 'osm' });
     ui.setBaseLayer('osm');

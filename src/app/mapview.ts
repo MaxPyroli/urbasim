@@ -56,6 +56,8 @@ export class MapView {
     if (kind === 'google') {
       if (!googleKey) throw new Error('Clé API Google manquante.');
       const tileset = await Cesium.createGooglePhotorealistic3DTileset({ key: googleKey, onlyUsingWithGoogleGeocoder: true });
+      // Google impose l'affichage de son logo et des attributions de données avec CesiumJS
+      tileset.showCreditsOnScreen = true;
       this.removeGoogle();
       this.google = tileset;
       viewer.scene.primitives.add(tileset);

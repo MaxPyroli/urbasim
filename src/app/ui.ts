@@ -244,9 +244,10 @@ export class Ui {
       <dialog id="settings">
         <form method="dialog">
           <h2>Google Photorealistic 3D Tiles</h2>
-          <p>Pour voir le projet dans l’environnement 3D de Google, collez une clé API Google Maps Platform avec les API <b>Map Tiles</b> et <b>Geocoding</b> activées. La clé reste dans ce navigateur (jamais dans le lien de partage).</p>
+          <p class="warn"><b>Indisponible en Europe.</b> Google refuse ces tuiles (erreur 403) pour tout projet dont le compte de facturation a une adresse dans l’Espace économique européen, France comprise. Ne renseignez pas une fausse adresse pour contourner : seule une facturation réellement hors EEE fonctionne.</p>
+          <p>Avec une facturation hors EEE : collez une clé API Google Maps Platform avec les API <b>Map Tiles</b> et <b>Geocoding</b> activées. La clé reste dans ce navigateur (jamais dans le lien de partage).</p>
           <input id="gkey" type="password" placeholder="AIza…" autocomplete="off" spellcheck="false" />
-          <p class="help">Conseil : restreignez la clé à votre domaine (référents HTTP). Les 3D Tiles de Google imposent l’usage de leur géocodeur : la recherche d’adresse bascule donc automatiquement sur l’API Geocoding de Google quand ce fond est actif.</p>
+          <p class="help">La facturation (carte bancaire) est obligatoire et un dépassement du quota gratuit est payant. Une alerte de budget ne plafonne pas la dépense : fixez aussi des quotas (Google Maps Platform → Quotas) et limitez la clé à ces deux API. Google déconseille les restrictions « par site » pour ces API : traitez la clé comme exposée. Cesium indique que ces tuiles ne s’utilisent qu’avec le géocodeur Google : la recherche d’adresse bascule donc sur l’API Geocoding quand ce fond est actif.</p>
           <menu><button value="cancel" class="btn ghost">Annuler</button><button id="gkey-save" value="ok" class="btn primary">Enregistrer</button></menu>
         </form>
       </dialog>`;
@@ -579,7 +580,8 @@ export class Ui {
           <button class="btn" data-act="geojson" ${p.footprint ? '' : 'disabled'}>⬇ GeoJSON</button>
           <button class="btn" data-act="share">🔗 Lien</button>
         </div></section>
-      <p class="disclaimer">Pré-faisabilité indicative : hypothèses simplifiées (noyaux, rampes, ratios SHAB/SDP…). À confronter au PLU applicable et à un professionnel avant toute décision.</p>`;
+      <p class="disclaimer">Pré-faisabilité indicative : hypothèses simplifiées (noyaux, rampes, ratios SHAB/SDP…). À confronter au PLU applicable et à un professionnel avant toute décision.</p>
+      <p class="disclaimer">Données : fonds © contributeurs OpenStreetMap ou orthophotographie © IGN ; cadastre © IGN / DGFiP (Licence Ouverte Etalab) ; voies © contributeurs OpenStreetMap (ODbL).</p>`;
   }
 }
 

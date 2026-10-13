@@ -842,6 +842,14 @@ dialog p {
   color: var(--muted);
 }
 
+dialog p.warn {
+  color: var(--fg);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+  border-radius: 10px;
+  padding: 9px 12px;
+}
+
 #gkey {
   width: 100%;
 }
