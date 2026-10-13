@@ -9,6 +9,8 @@ export interface AppState {
   groundOffset: number;
   baseLayer: BaseLayer;
   shadows: boolean;
+  /** Affiche les bâtiments voisins en 3D (IGN BD TOPO, France). */
+  context: boolean;
   /** Heure solaire locale approximative (0–24) pour l'étude d'ombres. */
   sunHour: number;
   /** Référence cadastrale du terrain importé, pour l'affichage. */
@@ -25,6 +27,7 @@ export function defaultState(): AppState {
     groundOffset: 0,
     baseLayer: 'osm',
     shadows: false,
+    context: true,
     sunHour: 15,
     parcelLabel: '',
   };
@@ -97,6 +100,7 @@ function sanitize(raw: unknown): AppState {
   if (Number.isFinite(r.groundOffset)) base.groundOffset = r.groundOffset!;
   if (r.baseLayer === 'osm' || r.baseLayer === 'ortho' || r.baseLayer === 'google') base.baseLayer = r.baseLayer;
   if (typeof r.shadows === 'boolean') base.shadows = r.shadows;
+  if (typeof r.context === 'boolean') base.context = r.context;
   if (Number.isFinite(r.sunHour)) base.sunHour = r.sunHour!;
   if (typeof r.parcelLabel === 'string') base.parcelLabel = r.parcelLabel;
   return base;

@@ -78,11 +78,19 @@ body {
   inset: 0;
 }
 
-/* Les crédits Cesium restent visibles entre les panneaux. */
+/* Les crédits Cesium restent visibles entre les panneaux, sur un fond sombre pour rester lisibles (mentions de licence). */
 .cesium-viewer-bottom {
   left: 404px !important;
   right: 384px !important;
   width: auto !important;
+  background: rgba(14, 20, 27, 0.74);
+  border-radius: 8px 8px 0 0;
+  padding: 3px 10px !important;
+}
+
+.cesium-viewer-bottom .cesium-credit-textContainer,
+.cesium-viewer-bottom .cesium-credit-textContainer a {
+  color: #f1f5f9 !important;
 }
 
 #sheet {

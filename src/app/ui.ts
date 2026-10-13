@@ -183,6 +183,9 @@ export class Ui {
           <button data-view="top" title="Vue du dessus">Dessus</button>
           <button data-view="oblique" title="Vue oblique 3D">3D</button>
         </div>
+        <div class="seg" role="group" aria-label="Contexte">
+          <button id="btn-context" title="Bâtiments voisins en volumes 3D (IGN BD TOPO, France)">🏙 Voisinage</button>
+        </div>
         <div class="seg sun" role="group" aria-label="Ombres">
           <button id="btn-sun" title="Étude d’ombres (jour courant)">☀ Ombres</button>
           <input id="sun-hour" type="range" min="6" max="21" step="0.25" aria-label="Heure solaire" />
@@ -409,6 +412,7 @@ export class Ui {
     this.root.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => b.addEventListener('click', () => this.h.view(b.dataset.view as 'top' | 'oblique')));
     $('#btn-settings').addEventListener('click', () => this.h.openSettings());
     $('#btn-sun').addEventListener('click', () => store.set({ shadows: !store.get().shadows }));
+    $('#btn-context').addEventListener('click', () => store.set({ context: !store.get().context }));
     this.el['sun-hour'].addEventListener('input', () => store.set({ sunHour: parseFloat((this.el['sun-hour'] as HTMLInputElement).value) }));
 
     // clic sur une arête du plan masse ou sur une ligne du tableau d'arêtes
@@ -455,6 +459,7 @@ export class Ui {
 
     const sun = this.root.querySelector<HTMLElement>('#btn-sun')!;
     sun.classList.toggle('active', state.shadows);
+    this.root.querySelector('#btn-context')?.classList.toggle('active', state.context);
     (this.el['sun-hour'] as HTMLInputElement).value = String(state.sunHour);
     const hh = Math.floor(state.sunHour);
     this.el['sun-out'].textContent = `${hh} h ${String(Math.round((state.sunHour - hh) * 60)).padStart(2, '0')}`;
@@ -581,7 +586,7 @@ export class Ui {
           <button class="btn" data-act="share">🔗 Lien</button>
         </div></section>
       <p class="disclaimer">Pré-faisabilité indicative : hypothèses simplifiées (noyaux, rampes, ratios SHAB/SDP…). À confronter au PLU applicable et à un professionnel avant toute décision.</p>
-      <p class="disclaimer">Données : fonds © contributeurs OpenStreetMap ou orthophotographie © IGN ; cadastre © IGN / DGFiP (Licence Ouverte Etalab) ; voies © contributeurs OpenStreetMap (ODbL).</p>`;
+      <p class="disclaimer">Données : fonds © contributeurs OpenStreetMap ou orthophotographie © IGN ; bâtiments voisins : IGN, BD TOPO® (Licence Ouverte 2.0), date de mise à jour affichée sur la carte ; cadastre © IGN / DGFiP (Licence Ouverte Etalab) ; voies © contributeurs OpenStreetMap (ODbL).</p>`;
   }
 }
 

@@ -9,3 +9,4 @@ export * from './project';
 export * from './scenarios';
 export * from './export';
 export * from './ringEdit';
+export * from './buildings';

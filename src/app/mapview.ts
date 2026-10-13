@@ -34,6 +34,8 @@ export class MapView {
       infoBox: false,
       selectionIndicator: false,
       shadows: false,
+      // les erreurs de rendu sont gérées par l'application (voir main.ts) : pas de fenêtre d'erreur Cesium
+      showRenderLoopErrors: false,
     });
     const scene = this.viewer.scene;
     scene.globe.depthTestAgainstTerrain = false;
@@ -124,11 +126,12 @@ export class MapView {
     const h = this.groundBase;
     const pts = ring.flatMap((p) => [Cesium.Cartesian3.fromDegrees(p.lon, p.lat, h), Cesium.Cartesian3.fromDegrees(p.lon, p.lat, h + top)]);
     const sphere = Cesium.BoundingSphere.fromPoints(pts);
-    const range = Math.max(sphere.radius * 4.2, 75);
+    const range = Math.max(sphere.radius * 4.2, 100);
     const rot = view === 'top' ? 0 : heading + Cesium.Math.toRadians(22);
+    // −55° : assez haut pour voir par-dessus les immeubles voisins (jusqu'à ~30 m, même dans une rue étroite) qui, sinon, masquent le projet
     this.viewer.camera.flyToBoundingSphere(sphere, {
       duration: 1.4,
-      offset: new Cesium.HeadingPitchRange(rot, Cesium.Math.toRadians(view === 'top' ? -90 : -32), range),
+      offset: new Cesium.HeadingPitchRange(rot, Cesium.Math.toRadians(view === 'top' ? -90 : -55), range),
     });
   }
 

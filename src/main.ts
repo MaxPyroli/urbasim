@@ -9,20 +9,23 @@ import {
   compareScenarios,
   computeProject,
   dist,
+  hiddenBuildingIds,
   parcelCenter,
   parseParcelGeoJson,
   pickStreetEdgesFromRoads,
   streetHeading,
   toggleStreetEdge,
+  type ContextBuilding,
   type LonLat,
   type Parcel,
   type Project,
   type Scenario,
 } from './engine';
+import { ContextRenderer } from './app/context3d';
 import { ParcelEditor } from './app/editor';
 import { MapView } from './app/mapview';
 import { SceneRenderer } from './app/scene3d';
-import { fetchCadastreParcel, fetchNearbyRoads, geocode } from './app/services';
+import { fetchCadastreParcel, fetchNearbyBuildings, fetchNearbyRoads, geocode } from './app/services';
 import { getGoogleKey, loadInitialState, setGoogleKey, shareLink, store } from './app/state';
 import { Ui, type UiHandlers } from './app/ui';
 
@@ -33,10 +36,16 @@ store.replace(loadInitialState());
 
 const map = new MapView(mapEl);
 const renderer = new SceneRenderer(map);
+const contextRenderer = new ContextRenderer(map);
 
 let project: Project | null = null;
 let scenarios: Scenario[] | null = null;
 let hintTimer = 0;
+
+/** Bâtiments voisins déjà chargés, avec la zone qu'ils couvrent. */
+let contextData: { center: LonLat; radius: number; list: ContextBuilding[] } | null = null;
+let contextToken = 0;
+let renderErrors = 0;
 
 /** Repli géométrique : le côté le plus court (hors arêtes parasites < 3 m) — la façade d'une lanière donne presque toujours sur la rue. */
 function guessStreetEdge(ring: LonLat[]): number {
@@ -89,6 +98,8 @@ function frame(view: 'top' | 'oblique'): void {
 
 /** Cesium rejette parfois avec un RequestErrorEvent (statusCode) plutôt qu'une Error. */
 function describeError(err: unknown): string {
+  if (err instanceof DOMException && err.name === 'AbortError') return 'délai dépassé';
+  if (err instanceof TypeError) return 'connexion impossible (réseau ou service injoignable)';
   if (err instanceof Error) return err.message;
   const e = err as { statusCode?: number; message?: string } | null;
   if (e?.statusCode === 403 || e?.statusCode === 401) return `accès refusé (HTTP ${e.statusCode})`;
@@ -96,14 +107,75 @@ function describeError(err: unknown): string {
   return e?.message ?? String(err);
 }
 
+/** Dernière consigne de l'outil de dessin : on la rétablit quand un message passager s'efface. */
+let editorHint: string | null = null;
+const LOADING_HINT = 'Chargement du bâti IGN…';
+
 function flashHint(msg: string, tone: 'info' | 'error' = 'info', ms = 5000): void {
   ui.setHint(msg, tone);
   window.clearTimeout(hintTimer);
-  hintTimer = window.setTimeout(() => ui.setHint(null), ms);
+  hintTimer = window.setTimeout(() => ui.setHint(editor.currentMode !== 'idle' ? editorHint : null), ms);
+}
+
+/** Le message de chargement ne doit pas écraser une consigne de dessin, ni effacer un autre message à sa fin. */
+function showLoadingHint(): void {
+  if (editor.currentMode === 'idle') ui.setHint(LOADING_HINT);
+}
+
+function clearLoadingHint(): void {
+  if (document.getElementById('hint')?.textContent === LOADING_HINT) ui.setHint(editor.currentMode !== 'idle' ? editorHint : null);
 }
 
 function center(ring: LonLat[]): LonLat {
   return parcelCenter(ring);
+}
+
+/** Distance approximative en mètres entre deux points (suffisante à l'échelle d'un quartier). */
+function metersBetween(a: LonLat, b: LonLat): number {
+  return Math.hypot((a.lon - b.lon) * 111320 * Math.cos((a.lat * Math.PI) / 180), (a.lat - b.lat) * 110574);
+}
+
+/** Masque, parmi les bâtiments voisins, ceux situés sur le terrain étudié (ils seraient démolis par le projet). */
+function applyContext(): void {
+  const { parcel, context } = store.get();
+  contextRenderer.setVisible(context && parcel !== null);
+  if (contextData && parcel) contextRenderer.setHidden(hiddenBuildingIds(parcel.ring, contextData.list));
+}
+
+/** Charge (si besoin) le bâti IGN autour du terrain. Les requêtes périmées sont ignorées ; un cache évite de recharger. */
+async function refreshContext(): Promise<void> {
+  const { parcel, context } = store.get();
+  if (!parcel || !context) {
+    if (!parcel) {
+      contextRenderer.dispose();
+      contextData = null;
+    }
+    applyContext();
+    return;
+  }
+  const c = center(parcel.ring);
+  const spread = Math.max(...parcel.ring.map((p) => metersBetween(c, p)));
+  // zone déjà couverte par les données chargées ? (terrain déplacé de peu, simple retouche du contour…)
+  if (contextData && metersBetween(contextData.center, c) + spread + 40 <= contextData.radius) {
+    applyContext();
+    return;
+  }
+  const radius = Math.min(450, Math.round(150 + spread));
+  const token = ++contextToken;
+  showLoadingHint();
+  try {
+    const res = await fetchNearbyBuildings(c.lon, c.lat, radius);
+    if (token !== contextToken || !store.get().context) return clearLoadingHint(); // une demande plus récente ou la désactivation a pris le relais
+    contextData = { center: c, radius, list: res.buildings };
+    contextRenderer.set(res.buildings, hiddenBuildingIds(parcel.ring, res.buildings));
+    applyContext();
+    if (res.buildings.length === 0) flashHint('Aucun bâtiment IGN ici : la BD TOPO ne couvre que la France.', 'info', 6000);
+    else if (res.truncated) flashHint('Zone très dense : seuls les premiers milliers de bâtiments sont affichés.', 'info', 6000);
+    else clearLoadingHint();
+  } catch (err) {
+    if (token === contextToken) flashHint(`Bâti IGN indisponible : ${describeError(err)}`, 'error', 6000);
+    else clearLoadingHint();
+  }
 }
 
 async function afterParcelChange(fly: boolean): Promise<void> {
@@ -112,6 +184,7 @@ async function afterParcelChange(fly: boolean): Promise<void> {
   const c = center(parcel.ring);
   await map.sampleGround(c.lon, c.lat);
   recompute();
+  void refreshContext();
   if (fly) frame('oblique');
 }
 
@@ -263,7 +336,10 @@ const editor = new ParcelEditor(map, {
     }
   },
   onEdgeClick: (edge) => handlers.toggleStreet(edge),
-  onStatus: (msg) => ui.setHint(msg),
+  onStatus: (msg) => {
+    editorHint = msg;
+    ui.setHint(msg);
+  },
   onMode: (mode) => ui.setMode(mode),
 });
 
@@ -307,8 +383,26 @@ function scheduleRender(): void {
 
 store.subscribe((s, changed) => {
   if (changed.has('parcel')) editor.setParcel(s.parcel);
-  if (changed.has('shadows') || changed.has('sunHour')) map.setSun(s.shadows, s.sunHour, s.parcel ? center(s.parcel.ring).lon : 2.35);
+  // le soleil dépend de la longitude du terrain ; sans cela l'éclairage suivrait l'heure réelle (bâtiments sombres le soir)
+  if (changed.has('shadows') || changed.has('sunHour') || changed.has('parcel')) map.setSun(s.shadows, s.sunHour, s.parcel ? center(s.parcel.ring).lon : 2.35);
+  if (changed.has('context')) void refreshContext();
+  if (changed.has('parcel') && !s.parcel) void refreshContext();
   scheduleRender();
+});
+
+// Les géométries du bâti viennent d'un service externe : si l'une d'elles faisait échouer le rendu, on retire le bâti
+// et on relance la boucle de rendu plutôt que de laisser toute la carte figée.
+map.viewer.scene.renderError.addEventListener((_scene, error) => {
+  console.error('Erreur de rendu Cesium', error);
+  contextRenderer.dispose();
+  contextData = null;
+  if (++renderErrors <= 2) {
+    window.setTimeout(() => (map.viewer.useDefaultRenderLoop = true), 0);
+    flashHint('Une erreur d’affichage 3D est survenue : le bâti voisin a été retiré. Réactivez « Voisinage » pour réessayer.', 'error', 9000);
+    store.set({ context: false });
+  } else {
+    flashHint('Erreur d’affichage 3D répétée : rechargez la page.', 'error', 30000);
+  }
 });
 
 // ---------- démarrage
@@ -316,17 +410,18 @@ store.subscribe((s, changed) => {
 const initial = store.get();
 ui.setBaseLayer('osm');
 editor.setParcel(initial.parcel);
+map.setSun(initial.shadows, initial.sunHour, initial.parcel ? center(initial.parcel.ring).lon : 2.35);
 recompute();
 if (initial.parcel) {
   const c = center(initial.parcel.ring);
-  map.setSun(initial.shadows, initial.sunHour, c.lon);
   map.viewer.camera.setView({
     destination: Cesium.Cartesian3.fromDegrees(c.lon, c.lat, 250),
     orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
   });
   frame('oblique');
+  void refreshContext();
 }
 if (initial.baseLayer !== 'osm') void applyBaseLayer(initial.baseLayer);
 
 // utile pour les tests de bout en bout et le débogage
-(window as unknown as Record<string, unknown>).urbasim = { store, map, getProject: () => project, centroid, frame, shareLink };
+(window as unknown as Record<string, unknown>).urbasim = { store, map, getProject: () => project, centroid, frame, shareLink, contextRenderer, getContext: () => contextData, getHidden: () => { const st = store.get(); return contextData && st.parcel ? [...hiddenBuildingIds(st.parcel.ring, contextData.list)] : []; } };
