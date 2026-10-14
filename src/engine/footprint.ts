@@ -3,6 +3,7 @@ import {
   bbox,
   cleanRing,
   difference,
+  dot,
   intersection,
   largestPolygon,
   minWidth,
@@ -12,8 +13,19 @@ import {
   rectRing,
   ringArea,
   toMulti,
+  union,
 } from './geometry';
 import type { FootprintShape, MultiPolygon, Placement, PolygonRings, Ring, Vec2 } from './types';
+
+/** Une rue secondaire (terrain d'angle) le long de laquelle le bâtiment peut aussi s'étendre, en repère du terrain. */
+export interface StreetFront {
+  a: Vec2;
+  b: Vec2;
+  /** Normale unitaire de la limite, orientée vers l'intérieur du terrain. */
+  n: Vec2;
+  /** Retrait appliqué sur cette limite : la profondeur se compte depuis l'alignement de construction. */
+  setback: number;
+}
 
 export interface FootprintOptions {
   shape: FootprintShape;
@@ -23,6 +35,8 @@ export interface FootprintOptions {
   areaCap: number | null;
   /** Position dans la profondeur : côté rue, en fond de parcelle, ou la meilleure des deux. */
   placement: Placement;
+  /** Autres rues du terrain (angle) : l'emprise « adaptée » les longe aussi, sur la même profondeur maximale. */
+  streetFronts?: StreetFront[];
 }
 
 export interface FootprintResult {
@@ -51,20 +65,36 @@ function bisectDepth(areaAt: (d: number) => number, dMax: number, cap: number): 
   return lo;
 }
 
-/** Emprise « adaptée » : l'enveloppe constructible, tranchée à la profondeur maximale depuis la rue. */
-function adaptedFootprint(comp: PolygonRings, opts: FootprintOptions): { ring: Ring; limitedBy: string[] } | null {
+/**
+ * Emprise « adaptée » : l'enveloppe constructible, tranchée à la profondeur maximale depuis la rue. Sur un terrain
+ * d'angle, elle longe aussi les autres rues (bande de la même profondeur le long de chacune) : un « L » plutôt qu'une
+ * simple bande le long de la rue principale. Si ces bandes refermaient une cour (terrain bordé de rues de tous côtés),
+ * on garde la seule bande de la rue principale : l'emprise n'a pas de trou.
+ */
+function adaptedFootprint(comp: PolygonRings, opts: FootprintOptions, fronts: StreetFront[] = []): { ring: Ring; limitedBy: string[] } | null {
   const bb = bbox(comp[0]);
   const extent = bb.maxY - bb.minY;
-  const dMax = Math.min(opts.maxDepth, extent);
+  const dMax = fronts.length > 0 ? opts.maxDepth : Math.min(opts.maxDepth, extent);
   const band = (d: number): MultiPolygon => toMulti(rectRing(bb.minX - 1, bb.minY - 1, bb.maxX + 1, bb.minY + d));
-  const cut = (d: number) => largestPolygon(intersection([comp], band(d)));
+  const strip = (f: StreetFront, d: number): MultiPolygon => {
+    const at = (p: Vec2, k: number): Vec2 => [p[0] + f.n[0] * k, p[1] + f.n[1] * k];
+    return toMulti([at(f.a, f.setback), at(f.b, f.setback), at(f.b, f.setback + d), at(f.a, f.setback + d)]);
+  };
+  const cut = (d: number) => {
+    if (fronts.length > 0) {
+      const poly = largestPolygon(intersection([comp], union(band(d), ...fronts.map((f) => strip(f, d)))));
+      if (poly && poly.length === 1) return poly;
+    }
+    return largestPolygon(intersection([comp], band(d)));
+  };
   const areaAt = (d: number) => {
     const p = cut(d);
     return p ? polygonArea(p) : 0;
   };
   const limitedBy: string[] = [];
   let d = dMax;
-  if (opts.maxDepth < extent - 1e-6) limitedBy.push('profondeur maximale');
+  const depthLimits = fronts.length > 0 ? areaAt(dMax) < polygonArea(comp) - 1e-3 : opts.maxDepth < extent - 1e-6;
+  if (depthLimits) limitedBy.push('profondeur maximale');
   if (opts.areaCap !== null && areaAt(d) > opts.areaCap) {
     d = bisectDepth(areaAt, dMax, opts.areaCap);
     limitedBy.push('emprise / densité');
@@ -173,11 +203,11 @@ interface Candidate {
 }
 
 /** Meilleure emprise de l'enveloppe, calculée depuis le bas du repère (v = 0 : côté rue). */
-function bestIn(env: MultiPolygon, opts: FootprintOptions): Candidate | null {
+function bestIn(env: MultiPolygon, opts: FootprintOptions, fronts: StreetFront[] = []): Candidate | null {
   let best: Candidate | null = null;
   for (const comp of env) {
     if (polygonArea(comp) < MIN_AREA) continue;
-    const res = opts.shape === 'rectangle' ? largestRectangle(comp, opts) : adaptedFootprint(comp, opts);
+    const res = opts.shape === 'rectangle' ? largestRectangle(comp, opts) : adaptedFootprint(comp, opts, fronts);
     if (!res) continue;
     const area = ringArea(res.ring);
     if (!best || area > best.area) best = { ...res, area };
@@ -202,13 +232,20 @@ export function generateFootprint(envelope: MultiPolygon, frame: Frame, opts: Fo
   const placement: Placement = opts.placement === 'fond' || opts.placement === 'auto' ? opts.placement : 'rue';
   const viable = (c: Candidate | null): c is Candidate => c !== null && c.area >= MIN_AREA && minWidth(c.ring) >= opts.minWidth;
 
-  let front = placement === 'fond' ? null : bestIn(env, opts);
+  // autres rues, converties dans le repère de calcul (la symétrie du fond de parcelle ne les utilise pas)
+  const fronts: StreetFront[] = (opts.streetFronts ?? []).map((f) => ({
+    a: frame.to(f.a),
+    b: frame.to(f.b),
+    n: [dot(f.n, frame.u), dot(f.n, frame.v)],
+    setback: f.setback,
+  }));
+  let front = placement === 'fond' ? null : bestIn(env, opts, fronts);
   let back: Candidate | null = null;
   if (placement !== 'rue') {
     const m = bestIn(mirrorEnv(env), opts);
     back = m && { ...m, ring: mirrorRing(m.ring) };
   }
-  if (placement === 'fond' && !viable(back)) front = bestIn(env, opts); // repli : mieux vaut un bâtiment sur rue que rien
+  if (placement === 'fond' && !viable(back)) front = bestIn(env, opts, fronts); // repli : mieux vaut un bâtiment sur rue que rien
 
   let at: 'rue' | 'fond' = 'rue';
   if (placement === 'fond') at = viable(back) || !viable(front) ? 'fond' : 'rue';

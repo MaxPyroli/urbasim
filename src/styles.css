@@ -712,6 +712,11 @@ table.edges input {
   border-color: var(--plan-fp-line);
 }
 
+.lg.access {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
 .lg.street {
   background: #e63946;
   border-color: #e63946;

@@ -159,6 +159,40 @@ export class SceneRenderer {
       });
     }
 
+    // --- entrée du parking : allée au sol, porte de garage dans la façade, pastille « P »
+    const ac = p.parkingAccess;
+    if (ac) {
+      if (ac.drive) {
+        e.add({ polygon: { hierarchy: C.Cartesian3.fromDegreesArray(deg(ac.drive)), height: base + 0.12, material: css('#3a3f45', 0.92), perPositionHeight: false } });
+      }
+      const off = (v: [number, number]): [number, number] => [v[0] + ac.out[0] * 0.04, v[1] + ac.out[1] * 0.04];
+      const a = ll(off(ac.door[0]));
+      const b = ll(off(ac.door[1]));
+      e.add({
+        wall: {
+          positions: C.Cartesian3.fromDegreesArray([a.lon, a.lat, b.lon, b.lat]),
+          minimumHeights: [base, base],
+          maximumHeights: [base + 2.5, base + 2.5],
+          material: css('#23272c'),
+        },
+      });
+      const dm = ll([(ac.door[0][0] + ac.door[1][0]) / 2, (ac.door[0][1] + ac.door[1][1]) / 2]);
+      e.add({
+        position: C.Cartesian3.fromDegrees(dm.lon, dm.lat, base + 3),
+        label: {
+          text: 'P  Entrée parking',
+          font: '600 12px system-ui, sans-serif',
+          fillColor: C.Color.WHITE,
+          showBackground: true,
+          backgroundColor: css('#1d4ed8', 0.95),
+          backgroundPadding: new C.Cartesian2(7, 4),
+          verticalOrigin: C.VerticalOrigin.BOTTOM,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          distanceDisplayCondition: new C.DistanceDisplayCondition(0, 400),
+        },
+      });
+    }
+
     // --- étiquette
     const cen = ll(centroid(p.footprint));
     const i = p.indicators;

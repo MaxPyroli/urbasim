@@ -13,7 +13,8 @@ import {
   ringArea,
   toMulti,
 } from './geometry';
-import { buildEnvelope, classifyFootprintEdges, computeEdges, makeFrame } from './layout';
+import { buildEnvelope, classifyFootprintEdges, computeEdges, inwardNormal, makeFrame, primaryStreetEdge } from './layout';
+import { computeParkingAccess } from './access';
 import { computeParking, requiredParking } from './parking';
 import { buildingHeight, computeProgram, effectiveGroundUse } from './program';
 import type {
@@ -59,6 +60,7 @@ export function emptyProject(origin: LonLat, parcelRing: Ring, c: Criteria): Pro
     edges: [],
     envelope: [],
     footprint: null,
+    parkingAccess: null,
     placement: 'rue',
     footprintEdges: [],
     atticFootprint: null,
@@ -140,7 +142,12 @@ export function computeProject(parcel: Parcel, criteria: Criteria, assumptions: 
   const parcelArea = project.parcelArea;
   const capCES = c.maxCoverage !== null ? c.maxCoverage * parcelArea : null;
   let areaCap = capCES;
-  const fpOptions = (cap: number | null) => ({ shape: c.footprintShape, maxDepth: c.maxDepth, minWidth: c.minWidth, areaCap: cap, placement: c.placement });
+  // autres rues du terrain (angle) : le bâtiment les longe aussi, si leur façade est exploitable
+  const mainStreet = primaryStreetEdge(ring, parcel.streetEdges);
+  const streetFronts = [...new Set(parcel.streetEdges)]
+    .filter((i) => i !== mainStreet && edges[i] && edges[i].kind === 'voie' && edges[i].length >= c.minWidth)
+    .map((i) => ({ a: edges[i].a, b: edges[i].b, n: inwardNormal(ring, i), setback: edges[i].setback }));
+  const fpOptions = (cap: number | null) => ({ shape: c.footprintShape, maxDepth: c.maxDepth, minWidth: c.minWidth, areaCap: cap, placement: c.placement, streetFronts });
   let fp = generateFootprint(envelope, frame, fpOptions(areaCap));
   let limitedBy = fp.limitedBy;
   let footprint: Ring | null = fp.ring;
@@ -245,6 +252,16 @@ export function computeProject(parcel: Parcel, criteria: Criteria, assumptions: 
   };
 
   project.footprint = footprint;
+  if (parking.basementLevels > 0 || parking.rdc > 0 || effectiveGroundUse(c) === 'parking') {
+    project.parkingAccess = computeParkingAccess({
+      footprint,
+      footprintEdges: b.fpEdges,
+      edges,
+      parcelRing: ring,
+      kind: parking.basementLevels > 0 ? 'sous-sol' : 'rez-de-chaussée',
+      levels: parking.basementLevels,
+    });
+  }
   project.placement = fp.at;
   project.footprintEdges = b.fpEdges;
   project.atticFootprint = b.attic;
@@ -308,6 +325,16 @@ function buildChecks(p: Project, c: Criteria, a: Assumptions): Check[] {
   if (effectiveGroundUse(c) === 'parking' && p.levels.length > 0) add('rdcParking', 'Parking en RDC', 'info', 'Le rez-de-chaussée est affecté au stationnement : pas de surface de plancher créée.');
   if (c.placement === 'auto' && p.placement === 'fond') {
     add('placement', 'Implantation', 'info', 'Bâtiment placé en fond de parcelle : l’emprise y est plus grande que côté rue (accès et défense incendie à prévoir).');
+  }
+  if (p.parking.basementLevels > 0 || p.parking.rdc > 0 || p.levels[0]?.use === 'parking') {
+    const ac = p.parkingAccess;
+    if (!ac) add('access', 'Entrée parking', 'warn', 'Aucune façade assez large (3,5 m + marges) tournée vers la rue : l’accès au parking reste à définir.');
+    else {
+      const drive = ac.drive ? `, allée de ${fmt(Math.hypot(ac.drive[3][0] - ac.drive[0][0], ac.drive[3][1] - ac.drive[0][1]), 1)} m jusqu’à la voie` : '';
+      add('access', 'Entrée parking', 'info', ac.kind === 'sous-sol'
+        ? `Porte de 3,5 m dans la façade sur rue${drive}, rampe vers ${ac.levels} niveau${ac.levels > 1 ? 'x' : ''} de sous-sol (≈ 15 m² pris au rez-de-chaussée).`
+        : `Porte de garage de 3,5 m dans la façade sur rue${drive} (parking en rez-de-chaussée).`);
+    }
   }
   if (p.limitedBy.length > 0) add('limit', 'Emprise limitée par', 'info', p.limitedBy.join(', '));
   return checks;

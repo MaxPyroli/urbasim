@@ -26,6 +26,16 @@ export function planSvg(p: Project, parcel: Parcel): string {
     out.push(`<polygon points="${pts(poly[0])}" fill="var(--plan-env)" stroke="var(--plan-env-line)" stroke-width="1.4" stroke-dasharray="4 3"/>`);
   }
   if (p.footprint) out.push(`<polygon points="${pts(p.footprint)}" fill="var(--plan-fp)" stroke="var(--plan-fp-line)" stroke-width="2" stroke-linejoin="round"/>`);
+  const ac = p.parkingAccess;
+  if (ac) {
+    if (ac.drive) out.push(`<polygon points="${pts(ac.drive)}" fill="#6b7280" fill-opacity="0.55" stroke="#374151" stroke-width="1" stroke-dasharray="3 2"/>`);
+    if (ac.ramp) out.push(`<polygon points="${pts(ac.ramp)}" fill="#1f2937" fill-opacity="0.45" stroke="#1f2937" stroke-width="1"/>`);
+    const [d0, d1] = ac.door;
+    out.push(`<line x1="${X(d0[0]).toFixed(1)}" y1="${Y(d0[1]).toFixed(1)}" x2="${X(d1[0]).toFixed(1)}" y2="${Y(d1[1]).toFixed(1)}" stroke="#111827" stroke-width="4" stroke-linecap="butt"/>`);
+    const cx = X((d0[0] + d1[0]) / 2 + ac.out[0] * 1.8);
+    const cy = Y((d0[1] + d1[1]) / 2 + ac.out[1] * 1.8);
+    out.push(`<g pointer-events="none"><rect x="${(cx - 7).toFixed(1)}" y="${(cy - 7).toFixed(1)}" width="14" height="14" rx="3" fill="#1d4ed8" stroke="#fff" stroke-width="1"><title>Entrée du parking</title></rect><text x="${cx.toFixed(1)}" y="${(cy + 3.8).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">P</text></g>`);
+  }
   if (p.atticFootprint) out.push(`<polygon points="${pts(p.atticFootprint)}" fill="var(--plan-attic)" stroke="var(--plan-fp-line)" stroke-width="1.2" opacity="0.9"/>`);
 
   // arêtes du terrain : voie en rouge, zone de clic large, pastille numérotée

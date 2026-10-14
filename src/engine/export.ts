@@ -110,6 +110,11 @@ export function buildGeoJson(p: Project, c: Criteria): string {
       feature('emprise', { type: 'Polygon', coordinates: [ll(p.footprint)] }, { hauteur_m: p.indicators.height, niveaux: p.indicators.levelsCount, surface_m2: p.indicators.footprintArea }),
     );
   }
+  if (p.parkingAccess) {
+    const ac = p.parkingAccess;
+    features.push(feature('entree_parking', { type: 'LineString', coordinates: ac.door.map((v) => ll([v])[0]) }, { type: ac.kind, niveaux_sous_sol: ac.levels }));
+    if (ac.drive) features.push(feature('allee_parking', { type: 'Polygon', coordinates: [ll(ac.drive)] }));
+  }
   if (p.atticFootprint) features.push(feature('attique', { type: 'Polygon', coordinates: [ll(p.atticFootprint)] }));
   return JSON.stringify({ type: 'FeatureCollection', features, urbasim: { criteres: c, indicateurs: p.indicators, stationnement: p.parking, logements: p.typologyCounts } }, null, 2);
 }

@@ -560,3 +560,102 @@ describe('implantation dans la profondeur du terrain (rue / fond / automatique)'
     expect(a.footprint).toEqual(b.footprint);
   });
 });
+
+describe('terrain d’angle : le bâtiment longe toutes les rues', () => {
+  const corner = (streets = [0, 1]) => parcelFromLocal([[0, 0], [30, 0], [30, 30], [0, 30]], streets);
+  const flat = { setbackVoie: 0, setbackLateral: 0, setbackFond: 0, maxDepth: 12 };
+
+  it('emprise en L : 12 m de profondeur le long des deux rues (576 m², pas 360)', () => {
+    const p = computeProject(corner(), crit({ ...flat, placement: 'rue' }));
+    expect(p.indicators.footprintArea).toBeCloseTo(30 * 12 + 12 * 18, 0);
+    expect(p.footprint!.length).toBe(6);
+    expect(p.footprintEdges.filter((e) => e.role === 'street').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('une seule rue : inchangé (bande de 360 m²)', () => {
+    expect(computeProject(corner([0]), crit({ ...flat, placement: 'rue' })).indicators.footprintArea).toBeCloseTo(360, 0);
+  });
+
+  it('le plafond d’emprise est respecté, en gardant le L', () => {
+    const p = computeProject(corner(), crit({ ...flat, placement: 'rue', maxCoverage: 0.4 }));
+    expect(p.indicators.footprintArea).toBeLessThanOrEqual(0.4 * 900 + 0.5);
+    expect(p.footprint!.length).toBe(6);
+  });
+
+  it('un pan coupé de moins de 4,5 m n’ajoute pas de bande', () => {
+    const cut = parcelFromLocal([[0, 0], [18, 0], [20, 2], [20, 30], [0, 30]], [0, 1]);
+    const one = parcelFromLocal([[0, 0], [18, 0], [20, 2], [20, 30], [0, 30]], [0]);
+    const a = computeProject(cut, crit({ ...flat, placement: 'rue' })).indicators.footprintArea;
+    expect(a).toBeCloseTo(computeProject(one, crit({ ...flat, placement: 'rue' })).indicators.footprintArea, 1);
+  });
+
+  it('terrain bordé de rues sur ses quatre côtés : pas de cour fermée, la bande de la rue principale', () => {
+    const island = parcelFromLocal([[0, 0], [20, 0], [20, 20], [0, 20]], [0, 1, 2, 3]);
+    const p = computeProject(island, crit({ ...flat, maxDepth: 6, placement: 'rue' }));
+    expect(p.indicators.footprintArea).toBeGreaterThan(0);
+    expect(p.footprint!.length).toBeLessThanOrEqual(8);
+  });
+
+  it('en fond de parcelle ou en rectangle inscrit, pas de L', () => {
+    expect(computeProject(corner(), crit({ ...flat, placement: 'fond' })).indicators.footprintArea).toBeCloseTo(360, 0);
+    expect(computeProject(corner(), crit({ ...flat, placement: 'rue', footprintShape: 'rectangle' })).footprint!.length).toBe(4);
+  });
+});
+
+describe('entrée du parking', () => {
+  const lot = () => parcelFromLocal([[0, 0], [10, 0], [10, 30], [0, 30]], [0]);
+  const sub = { parkingStrategy: 'sous-sol' as const, setbackFond: 0, levels: 4, placement: 'rue' as const };
+  const w = (a: number[][]) => Math.hypot(a[1][0] - a[0][0], a[1][1] - a[0][1]);
+
+  it('sous-sol : porte de 3,5 m dans la façade sur rue et rampe dans le bâtiment', () => {
+    const p = computeProject(lot(), crit(sub));
+    expect(p.parking.basementLevels).toBeGreaterThan(0);
+    const ac = p.parkingAccess!;
+    expect(ac).not.toBeNull();
+    expect(ac.kind).toBe('sous-sol');
+    expect(w(ac.door)).toBeCloseTo(3.5, 2);
+    expect(ac.drive).toBeNull(); // façade sur la voie
+    expect(ringArea(ac.ramp!)).toBeCloseTo(3.5 * 4.3, 1);
+    const minY = Math.min(...p.parcelRing.map((q) => q[1]));
+    expect(ac.door[0][1]).toBeCloseTo(minY, 1);
+    expect(p.checks.find((c) => c.id === 'access')?.status).toBe('info');
+  });
+
+  it('bâtiment en retrait de 5 m : une allée relie la porte à la voie', () => {
+    const p = computeProject(lot(), crit({ ...sub, setbackVoie: 5 }));
+    const ac = p.parkingAccess!;
+    expect(ac.drive).not.toBeNull();
+    expect(ringArea(ac.drive!)).toBeCloseTo(3.5 * 5, 0);
+  });
+
+  it('bâtiment en fond de parcelle : allée jusqu’à la voie', () => {
+    const p = computeProject(lot(), crit({ ...sub, placement: 'fond' }));
+    expect(ringArea(p.parkingAccess!.drive!)).toBeGreaterThan(3.5 * 10);
+  });
+
+  it('parking en rez-de-chaussée : porte sans rampe', () => {
+    const p = computeProject(lot(), crit({ ...sub, parkingStrategy: 'rdc' }));
+    expect(p.parkingAccess?.kind).toBe('rez-de-chaussée');
+    expect(p.parkingAccess?.ramp).toBeNull();
+  });
+
+  it('parking de surface seulement : pas d’entrée', () => {
+    const p = computeProject(lot(), crit({ ...sub, parkingStrategy: 'surface' }));
+    expect(p.parkingAccess).toBeNull();
+  });
+
+  it('façade trop étroite : pas d’entrée et un avertissement', () => {
+    const narrow = parcelFromLocal([[0, 0], [4, 0], [4, 30], [0, 30]], [0]);
+    const p = computeProject(narrow, crit({ ...sub, minWidth: 3, parkingStrategy: 'rdc' }));
+    expect(p.parkingAccess).toBeNull();
+    expect(p.checks.find((c) => c.id === 'access')?.status).toBe('warn');
+  });
+
+  it('terrain d’angle : la porte est sur une façade sur rue', () => {
+    const c = parcelFromLocal([[0, 0], [30, 0], [30, 30], [0, 30]], [0, 1]);
+    const p = computeProject(c, crit({ ...sub, setbackVoie: 0, setbackLateral: 0, placement: 'rue' }));
+    expect(p.parkingAccess).not.toBeNull();
+    const mx = (p.parkingAccess!.door[0][0] + p.parkingAccess!.door[1][0]) / 2;
+    expect(mx).toBeGreaterThan(Math.min(...p.parcelRing.map((q) => q[0])));
+  });
+});

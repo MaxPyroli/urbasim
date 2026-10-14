@@ -593,7 +593,7 @@ export class Ui {
       ${kpis}
       ${typ}
       <section><h3>Plan masse</h3>${p.footprint ? `<p class="plan-cap"><b>Emprise ${n1(i.facadeWidth)} × ${n1(i.depth)} m</b> · ${n0(i.footprintArea)} m² · ${n0(i.coverage * 100)} % du terrain</p>` : ''}<div class="plan">${planSvg(p, s.parcel)}</div>
-        <div class="legend"><span class="lg parcel"></span>Terrain <span class="lg env"></span>Zone constructible <span class="lg fp"></span>Emprise <span class="lg street"></span>Rue</div></section>
+        <div class="legend"><span class="lg parcel"></span>Terrain <span class="lg env"></span>Zone constructible <span class="lg fp"></span>Emprise <span class="lg street"></span>Rue <span class="lg access"></span>Entrée parking</div></section>
       ${checks ? `<section><h3>Contrôles${errors.length ? ` <span class="badge error">${errors.length}</span>` : ''}</h3>${checks}</section>` : ''}
       ${levels ? `<section><h3>Niveaux</h3>${levels}</section>` : ''}
       ${sc ? `<section><h3>Comparer les hauteurs</h3>${sc}</section>` : ''}

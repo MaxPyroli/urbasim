@@ -9,6 +9,8 @@ export interface LonLat {
   lat: number;
 }
 
+import type { ParkingAccess } from './access';
+
 export type Use = 'logement' | 'commerce' | 'bureaux' | 'parking';
 export type EdgeKind = 'voie' | 'laterale' | 'fond';
 export type Typology = 'T1' | 'T2' | 'T3' | 'T4' | 'T5';
@@ -197,6 +199,8 @@ export interface Project {
   edges: EdgeInfo[];
   envelope: MultiPolygon;
   footprint: Ring | null;
+  /** Entrée du parking (porte, allée, rampe), null sans parking en sous-sol ni en rez-de-chaussée. */
+  parkingAccess: ParkingAccess | null;
   /** Où l'emprise a été placée : sur rue ou en fond de parcelle. */
   placement: 'rue' | 'fond';
   footprintEdges: FootprintEdge[];
