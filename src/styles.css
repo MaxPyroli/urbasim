@@ -1040,3 +1040,45 @@ dialog menu {
   max-width: 460px;
   color: #93a4b5;
 }
+
+/* PLU */
+.plu {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--soft);
+  font-size: 12.5px;
+}
+
+.plu h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.plu ul {
+  margin: 4px 0;
+  padding-left: 16px;
+}
+
+.plu .zones {
+  list-style: none;
+  padding: 0;
+}
+
+.plu .zone-code {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 700;
+}
+
+.plu a {
+  color: var(--accent);
+}
+
+.plu details {
+  margin: 4px 0;
+}

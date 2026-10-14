@@ -3,6 +3,7 @@ import {
   TYPOLOGIES,
   type Check,
   type Criteria,
+  type PluInfo,
   type Project,
   type Typology,
 } from '../engine';
@@ -225,6 +226,7 @@ export class Ui {
                 <input id="file-import" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden />
               </div>
               <div id="parcel-info" class="info"></div>
+              <div id="plu" class="plu" hidden></div>
               <div id="edges"></div>
             </div>
           </details>
@@ -266,7 +268,7 @@ export class Ui {
         </form>
       </dialog>`;
 
-    for (const id of ['hint', 'parcel-info', 'edges', 'results', 'mix', 'lvl-label', 'lvl-sub', 'sun-hour', 'sun-out', 'btn-sun', 'settings', 'gkey', 'file-import', 'q']) {
+    for (const id of ['hint', 'parcel-info', 'plu', 'edges', 'results', 'mix', 'lvl-label', 'lvl-sub', 'sun-hour', 'sun-out', 'btn-sun', 'settings', 'gkey', 'file-import', 'q']) {
       this.el[id] = this.root.querySelector<HTMLElement>(`#${id}`)!;
     }
 
@@ -454,6 +456,32 @@ export class Ui {
     const b = this.root.querySelector<HTMLElement>('#btn-context');
     b?.classList.toggle('loading', on);
     b?.setAttribute('aria-busy', String(on));
+  }
+
+  /** Bloc « PLU » : zonage et règlement au droit du terrain (Géoportail de l'Urbanisme). */
+  setPlu(state: 'loading' | { error: string } | PluInfo | null): void {
+    const el = this.el['plu'];
+    el.hidden = state === null;
+    if (state === null) return;
+    if (state === 'loading') {
+      el.innerHTML = '<p class="muted">Recherche du PLU (Géoportail de l’Urbanisme)…</p>';
+      return;
+    }
+    if ('error' in state) {
+      el.innerHTML = `<p class="muted">PLU indisponible : ${esc(state.error)}</p>`;
+      return;
+    }
+    const link = (href: string, text: string) => `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+    if (state.zones.length === 0) {
+      el.innerHTML = `<h3>PLU</h3><p class="muted">Aucun zonage numérisé au Géoportail de l’Urbanisme ici (règlement national d’urbanisme, ou document non publié). ${link(state.viewerUrl, 'Vérifier sur le Géoportail')}</p>`;
+      return;
+    }
+    const zones = state.zones
+      .map((z) => `<li><span class="zone-code">${esc(z.code)}</span> ${esc(z.name)}${z.regulationUrl ? ` — ${link(z.regulationUrl, 'règlement (PDF)')}` : ''}${z.validated ? ` <span class="muted">· validé le ${z.validated}</span>` : ''}</li>`)
+      .join('');
+    const presc = state.prescriptions.length > 0 ? `<details><summary>${state.prescriptions.length} prescription${state.prescriptions.length > 1 ? 's' : ''} graphique${state.prescriptions.length > 1 ? 's' : ''}</summary><ul>${state.prescriptions.slice(0, 12).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${state.prescriptions.length > 12 ? '<p class="muted">… et d’autres : voir le Géoportail.</p>' : ''}</details>` : '';
+    const several = state.zones.length > 1 ? '<p class="muted">Le terrain recoupe plusieurs zones : lisez le règlement de chacune.</p>' : '';
+    el.innerHTML = `<h3>${esc(state.docType ?? 'PLU')}</h3><ul class="zones">${zones}</ul>${several}${presc}<p class="help">Reportez retraits, hauteur, emprise et stationnement du règlement dans « Gabarit » : Urbasim ne les lit pas. ${link(state.viewerUrl, 'Voir sur le Géoportail de l’Urbanisme')}</p>`;
   }
 
   setMode(mode: EditorMode): void {

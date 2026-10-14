@@ -1,4 +1,4 @@
-import { LocalProjection, cleanRing, distToSegment, parseBdTopoBuildings, type ContextBuilding, type LonLat, type Ring } from '../engine';
+import { LocalProjection, cleanRing, distToSegment, parseBdTopoBuildings, parsePlu, parcelCenter, type ContextBuilding, type LonLat, type PluInfo, type Ring } from '../engine';
 
 export interface GeocodeResult {
   label: string;
@@ -187,4 +187,24 @@ async function fetchWfsPage(url: string, signal?: AbortSignal): Promise<{ featur
     if (attempt < RETRY_DELAYS_MS.length) await new Promise((res) => setTimeout(res, RETRY_DELAYS_MS[attempt]));
   }
   throw lastError instanceof Error ? lastError : new Error('réseau');
+}
+
+const GPU = 'https://apicarto.ign.fr/api/gpu';
+
+async function gpuGet(endpoint: string, geom: object, signal?: AbortSignal): Promise<unknown> {
+  const r = await fetch(`${GPU}/${endpoint}?geom=${encodeURIComponent(JSON.stringify(geom))}`, { signal });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+/**
+ * Zonage du PLU, document et prescriptions graphiques au droit du terrain (Géoportail de l'Urbanisme, via l'API Carto
+ * de l'IGN, sans clé). Le zonage et le document sont indispensables ; les prescriptions sont facultatives.
+ */
+export async function fetchPlu(ring: LonLat[], signal?: AbortSignal): Promise<PluInfo> {
+  const closed = [...ring, ring[0]].map((p) => [p.lon, p.lat]);
+  const geom = { type: 'Polygon', coordinates: [closed] };
+  const optional = (endpoint: string) => gpuGet(endpoint, geom, signal).catch(() => null);
+  const [zones, doc, surf, lin, pct] = await Promise.all([gpuGet('zone-urba', geom, signal), gpuGet('document', geom, signal), optional('prescription-surf'), optional('prescription-lin'), optional('prescription-pct')]);
+  return parsePlu(zones, doc, [surf, lin, pct], parcelCenter(ring));
 }

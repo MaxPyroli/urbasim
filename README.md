@@ -136,6 +136,19 @@ France ; ailleurs, aucun bâtiment n'est affiché.
 - **Volumes simples** : prismes à toit plat, sans façades ni toitures réelles, posés à l'altitude du sol du fond de carte
   actif (reconstruits si elle change, par exemple en passant de OpenStreetMap à Google 3D).
 
+## PLU (Géoportail de l'Urbanisme)
+
+Dès qu'un terrain est choisi, un bloc « PLU » indique le **zonage** (code, libellé, type U/AU/A/N), le type de document
+(PLU, PLUi, POS, carte communale), la date de validation, un lien vers le **règlement écrit (PDF)** de la zone et la
+liste des **prescriptions graphiques** qui recoupent le terrain (hauteur plafond, alignement, emplacement réservé…). Les
+données viennent de l'API Carto de l'IGN (`apicarto.ign.fr/api/gpu`, sans clé, CORS ouvert) ; le PDF est servi par la
+Géoportail (`data.geopf.fr/annexes/gpu`). Sans document numérisé (règlement national d'urbanisme, document non publié),
+le bloc le dit et renvoie vers le Géoportail.
+
+**Limites** : Urbasim ne lit pas le règlement — retraits, hauteur, emprise et stationnement sont du texte libre dans le
+PDF. C'est à vous de les reporter dans « Gabarit ». Les prescriptions sont listées mais pas encore dessinées sur la carte
+ni converties en critères. Vérifié sur Paris (zone UG) ; non testé ailleurs (PLUi, cartes communales, plusieurs zones).
+
 ## Comment le calcul fonctionne
 
 Tout est dans `src/engine/` : du TypeScript pur, sans dépendance au navigateur, testé par `tests/engine.test.ts`.
@@ -189,7 +202,7 @@ dans `src/engine/defaults.ts` (`DEFAULT_ASSUMPTIONS`) pour être ajustées.
 ## Ce qui a été vérifié, et ce qui ne l'a pas été
 
 Vérifié (tests automatiques et captures dans un Chromium headless) : le moteur de calcul et la lecture des données du
-bâti (124 tests, dont 5 vrais bâtiments de la BD TOPO, le client du service IGN avec un faux réseau — pagination, tentatives, erreurs — et la lecture de l'état enregistré), le dessin et l'édition du terrain, l'import cadastre IGN (la
+bâti (129 tests, dont 5 vrais bâtiments de la BD TOPO, le client du service IGN avec un faux réseau — pagination, tentatives, erreurs — et la lecture de l'état enregistré), le dessin et l'édition du terrain, l'import cadastre IGN (la
 surface calculée correspond à la contenance cadastrale), le rendu 3D sur fond OSM et photo IGN, l'étude d'ombres, le lien
 de partage (y compris corrompu), la validité XML du KML, l'affichage mobile, le repli en cas de clé Google invalide.
 Pour le bâti voisin, sur le vrai service de l'IGN : 208 à 217 bâtiments chargés autour d'une parcelle de Paris, un seul

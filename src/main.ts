@@ -25,7 +25,7 @@ import { ContextRenderer } from './app/context3d';
 import { ParcelEditor } from './app/editor';
 import { MapView } from './app/mapview';
 import { SceneRenderer } from './app/scene3d';
-import { fetchCadastreParcel, fetchNearbyBuildings, fetchNearbyRoads, geocode } from './app/services';
+import { fetchCadastreParcel, fetchNearbyBuildings, fetchNearbyRoads, fetchPlu, geocode } from './app/services';
 import { getGoogleKey, loadInitialState, setGoogleKey, shareLink, store } from './app/state';
 import { Ui, type UiHandlers } from './app/ui';
 
@@ -182,6 +182,25 @@ function applyContext(): void {
   }
 }
 
+let pluToken = 0;
+
+/** Zonage et règlement du PLU au droit du terrain (Géoportail de l'Urbanisme). Les réponses périmées sont ignorées. */
+async function refreshPlu(): Promise<void> {
+  const token = ++pluToken;
+  const { parcel } = store.get();
+  if (!parcel) {
+    ui.setPlu(null);
+    return;
+  }
+  ui.setPlu('loading');
+  try {
+    const info = await fetchPlu(parcel.ring);
+    if (token === pluToken) ui.setPlu(info);
+  } catch (err) {
+    if (token === pluToken) ui.setPlu({ error: describeError(err) });
+  }
+}
+
 /** Charge (si besoin) le bâti IGN autour du terrain. Les requêtes périmées sont ignorées ; un cache évite de recharger. */
 async function refreshContext(): Promise<void> {
   const token = ++contextToken; // toute nouvelle décision, même sans chargement, rend caduque une requête en cours
@@ -230,6 +249,7 @@ async function afterParcelChange(fly: boolean): Promise<void> {
   await map.sampleGround(c.lon, c.lat);
   recompute();
   void refreshContext();
+  void refreshPlu();
   if (fly) frame('oblique');
 }
 
@@ -434,7 +454,10 @@ store.subscribe((s, changed) => {
   // le soleil dépend de la longitude du terrain ; sans cela l'éclairage suivrait l'heure réelle (bâtiments sombres le soir)
   if (changed.has('shadows') || changed.has('sunHour') || changed.has('parcel')) map.setSun(s.shadows, s.sunHour, s.parcel ? center(s.parcel.ring).lon : 2.35);
   if (changed.has('context')) void refreshContext();
-  if (changed.has('parcel') && !s.parcel) void refreshContext();
+  if (changed.has('parcel') && !s.parcel) {
+    void refreshContext();
+    void refreshPlu();
+  }
   scheduleRender();
 });
 
@@ -516,6 +539,7 @@ if (initial.parcel) {
   });
   frame('oblique');
   void refreshContext();
+  void refreshPlu();
 }
 if (initial.baseLayer !== 'osm') void applyBaseLayer(initial.baseLayer);
 
