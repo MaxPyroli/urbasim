@@ -150,7 +150,7 @@ Tout est dans `src/engine/` : du TypeScript pur, sans dépendance au navigateur,
    le fond, la façade sur rue donne alors sur une cour ou un jardin), ou *automatique* — le défaut — qui retient le fond
    seulement s'il offre au moins 3 % d'emprise de plus (terrain qui s'élargit vers l'arrière), la rue l'emportant à
    égalité. Sur un lot rectangulaire les deux positions sont équivalentes : choisissez « En fond de parcelle » pour
-   libérer la rue. L'emprise est réduite si l'emprise au sol ou la densité maximales l'exigent. L'outil indique ce qui a
+   libérer la rue. Sur un **terrain d'angle** (autre côté sur rue d'au moins la largeur minimale), l'emprise « adaptée » longe toutes les rues sur la profondeur maximale (un « L »), sauf si ces bandes refermaient une cour. **Entrée du parking** : avec un sous-sol (ou un rez-de-chaussée en parking), une porte de 3,5 m est placée à l'extrémité de la façade sur rue la plus longue, avec l'allée jusqu'à la voie si le bâtiment est en retrait, et la rampe (≈ 15 m² pris au rez-de-chaussée) ; position indicative, cheminement et visibilité non vérifiés. L'emprise est réduite si l'emprise au sol ou la densité maximales l'exigent. L'outil indique ce qui a
    limité l'emprise. Non modélisés : l'accès depuis la rue jusqu'à un bâtiment en fond (cheminement, défense incendie)
    et la possibilité de deux corps de bâtiment (sur rue et en fond).
 4. **Niveaux** : hauteur = RDC + x étages (+ attique en retrait). Surface de plancher = emprise moins l'épaisseur des
@@ -189,7 +189,7 @@ dans `src/engine/defaults.ts` (`DEFAULT_ASSUMPTIONS`) pour être ajustées.
 ## Ce qui a été vérifié, et ce qui ne l'a pas été
 
 Vérifié (tests automatiques et captures dans un Chromium headless) : le moteur de calcul et la lecture des données du
-bâti (111 tests, dont 5 vrais bâtiments de la BD TOPO, le client du service IGN avec un faux réseau — pagination, tentatives, erreurs — et la lecture de l'état enregistré), le dessin et l'édition du terrain, l'import cadastre IGN (la
+bâti (124 tests, dont 5 vrais bâtiments de la BD TOPO, le client du service IGN avec un faux réseau — pagination, tentatives, erreurs — et la lecture de l'état enregistré), le dessin et l'édition du terrain, l'import cadastre IGN (la
 surface calculée correspond à la contenance cadastrale), le rendu 3D sur fond OSM et photo IGN, l'étude d'ombres, le lien
 de partage (y compris corrompu), la validité XML du KML, l'affichage mobile, le repli en cas de clé Google invalide.
 Pour le bâti voisin, sur le vrai service de l'IGN : 208 à 217 bâtiments chargés autour d'une parcelle de Paris, un seul
